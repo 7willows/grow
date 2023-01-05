@@ -1,0 +1,12 @@
+{
+    "importMap": "import_map.json",
+    "tasks": {
+        "run": "deno run --allow-net --allow-read",
+        "example:simple": "deno task run examples/simple/main.ts",
+    },
+    "lint": {
+        "rules": {
+            "exclude": ["no-explicit-any"]
+        }
+    }
+}
