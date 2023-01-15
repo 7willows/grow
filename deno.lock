@@ -13,6 +13,8 @@
     "https://deno.land/std@0.171.0/path/separator.ts": "0fb679739d0d1d7bf45b68dacfb4ec7563597a902edbaf3c59b50d5bcadd93b1",
     "https://deno.land/std@0.171.0/path/win32.ts": "99170a0eb0e2b1ce41499c1e86bb55320cb6606299ad947f57ee0a291cdb93d5",
     "https://deno.land/x/caller@0.1.4/caller.ts": "22e23d46ea649f9d1cd2dbcf920aa6ba50956e021ca0089b9e070b759f84cab0",
+    "https://deno.land/x/deno_reflect@v0.2.1/Reflect.ts": "82fee1a619fd11c321d0db7f9f4d50b6b5cb4ce321936ba8c8520b8c6c127508",
+    "https://deno.land/x/deno_reflect@v0.2.1/mod.ts": "d2ca8f2338a10ecf7ae94b7d8329088f403ef080209c6eeeab3ae279ef904901",
     "https://deno.land/x/lodash@4.17.19/lodash.js": "efa0ecfaf5548e32a16e18d3700436cd146c48b4f3712f095dae6f00100018e5",
     "https://deno.land/x/lodash_es@v0.0.2/lodash.default.js": "6a5a423bd9cdaf45ab289c16ac9ecb579058fb2bc97873c879d8e228e51084da",
     "https://deno.land/x/lodash_es@v0.0.2/mod.ts": "4a1af2b6110e49d3f388d2e81a9d7269b341bd066ea2e8120bc0397de98958fa",

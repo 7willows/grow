@@ -1,91 +1,82 @@
 import { z } from "zod";
 import caller from "https://deno.land/x/caller@0.1.4/caller.ts";
 import * as path from "std/path/mod.ts";
+import { Reflect } from "reflect-metadata";
 
-export function config(cfgPath?: string) {
-    return function (target:any, prop:string) {
-        Object.defineProperty(target, prop, {
-            value:{
-                ___growDecorator: true,
-                type: 'config',
-                cfgPath,
-            },
-            enumerable: true
-        });
-    }
+export function config(cfgPath?: string): PropertyDecorator {
+    return Reflect.metadata("config", cfgPath);
 }
 
-export function inject(serviceName: string) {
-    return function (
-        target: any,
-        propertyKey: string,
-        descriptor: PropertyDescriptor
-    ) {
-        // console.log('abc', {serviceName});
-    }
+export function inject(serviceName: string): PropertyDecorator {
+    return Reflect.metadata("inject", serviceName);
 }
 
-export const PlantDef =z.object({
-    contract: z.object({}).passthrough().array(),
+export const PlantDef = z.object({
+    contracts: z.object({}).passthrough().array(),
     config: z.record(z.any()).optional(),
-}) 
+})
 export type PlantDef = z.infer<typeof PlantDef>;
 
 export const Field = z.record(PlantDef);
 export type Field = z.infer<typeof Field>;
 
-export function grow(field: Field) {
+export async function grow(field: Field) {
     field = Field.parse(field);
-    const servicesDir = path.dirname(caller() ?? ''); 
+    const servicesDir = path.dirname(caller() ?? '');
 
-    for (const [name, def] of Object.entries(field)) {
-        const worker = startWorker(servicesDir, name, def);
-    }
+    const services = await Promise.all(Object.entries(field).map(async ([name, plant]) => {
+        const service = await growPlant(name, plant, servicesDir);
+        return service;
+    }));
+
 }
 
-export function startWorker(
+export async function growPlant(
+    plantName: string,
+    def: PlantDef,
     dir: string,
-    serviceName: string,
-    def: PlantDef
 ) {
-    const code = workerCode(dir, serviceName, def.config);
-    const blob = new Blob([code])
-    const url = URL.createObjectURL(blob);
+    const servicePath = path.join(dir, plantName[0].toLowerCase() + plantName.slice(1));
 
-    const worker = new Worker(url, { type: 'module' });
+    const worker = new Worker(new URL("./worker.ts?plantName=" + plantName + "&servicePath=" + servicePath, import.meta.url), {
+        type: "module",
+    });
+
+
+    worker.onmessage = (event) => {
+        if (event.data.type === "ready") {
+            worker.postMessage({
+                type: 'config',
+                config: def.config,
+            });
+        }
+    };
 
     return worker;
 }
 
-function workerCode(
-    dir:string,
-    serviceName:string,
-    config: Record<string, any>
-) {
-    const workerFileName = serviceName[0].toLowerCase() + serviceName.slice(1) + ".ts";
-    
-    return `
-import { ${serviceName} } from "${dir}/${workerFileName}";
-import * as _ from 'lodash';
+// export function startWorker(
+//     dir: string,
+//     serviceName: string,
+//     def: PlantDef
+// ) {
+//     const code = workerCode(dir, serviceName, def.config);
+//     const blob = new Blob([code])
+//     const url = URL.createObjectURL(blob);
 
-const service = new ${serviceName}();
+//     const worker = new Worker(url, { type: 'module' });
 
-for (const [prop, value] of Object.entries(${serviceName}.prototype)) {
-    if (value?.___growDecorator) {
-        if (value.type === 'config') {
-            service[prop] = ${JSON.stringify(config)};
-            if (value.cfgPath) {
-                service[prop] = _.get(service[prop], value.cfgPath);
-            }
-        }
-    }
-}
+//     return worker;
+// }
 
-console.log('wwww', service);
+// function workerCode(
+//     dir: string,
+//     serviceName: string,
+//     config: Record<string, any>
+// ) {
+//     const workerFileName = serviceName[0].toLowerCase() + serviceName.slice(1) + ".ts";
 
-self.onmessage = function (event) {
-    const { data } = event;
-    // console.log('ABC', data);
-};
-`;
-}
+//     return `
+
+// `;
+// }

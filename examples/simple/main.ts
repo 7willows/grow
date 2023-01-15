@@ -1,15 +1,15 @@
 import { grow } from '../../mod.ts';
-import { IAccess } from './contract.ts';
+import { IAccess, IManager } from './contract.ts';
 
 grow({
     Access: {
-        contract: [IAccess],
+        contracts: [IAccess],
         config: {
             url: "OK"
         }
     },
-    // Manager: {
-    //     contract: [IManager]
-    // },
+    Manager: {
+        contracts: [IManager]
+    },
 });
 
