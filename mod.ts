@@ -2,6 +2,8 @@ import { z } from "zod";
 import caller from "https://deno.land/x/caller@0.1.4/caller.ts";
 import * as path from "std/path/mod.ts";
 import { Reflect } from "reflect-metadata";
+import { match, P } from "ts-pattern";
+import type { MsgFromWorker } from "./messages.ts";
 
 export function config(cfgPath?: string): PropertyDecorator {
     return Reflect.metadata("config", cfgPath);
@@ -23,60 +25,73 @@ export type Field = z.infer<typeof Field>;
 export async function grow(field: Field) {
     field = Field.parse(field);
     const servicesDir = path.dirname(caller() ?? '');
+    const instances = instantiateWorkers(servicesDir, field);
 
-    const services = await Promise.all(Object.entries(field).map(async ([name, plant]) => {
-        const service = await growPlant(name, plant, servicesDir);
-        return service;
+    await Promise.all(Object.keys(instances).map((plantName) => {
+        return serviceCommunication(plantName, instances);
     }));
-
 }
 
-export async function growPlant(
+async function serviceCommunication(
     plantName: string,
-    def: PlantDef,
-    dir: string,
+    instances: Record<string, Service>
 ) {
-    const servicePath = path.join(dir, plantName[0].toLowerCase() + plantName.slice(1));
+    const service = instances[plantName];
 
-    const worker = new Worker(new URL("./worker.ts?plantName=" + plantName + "&servicePath=" + servicePath, import.meta.url), {
-        type: "module",
-    });
+    service.worker.onmessage = (event) => {
+        match<MsgFromWorker, void>(event.data)
+            .with({ ready: true }, () => {
+                service.worker.postMessage({
+                    init: {
+                        config: service.plantDef.config
+                    },
+                });
 
+                // TEST CODE:
+                if (plantName === "Manager") {
+                    service.worker.postMessage({
+                        call: {
+                            method: "listItems",
+                            args: [],
+                            caller: "Manager",
+                            receiver: "Manager",
+                            callId: "1",
+                        }
+                    });
+                }
+            })
+            .with({ call: P.select() }, (call) => {
+                instances[call.receiver].worker
+                    .postMessage({ call });
 
-    worker.onmessage = (event) => {
-        if (event.data.type === "ready") {
-            worker.postMessage({
-                type: 'config',
-                config: def.config,
-            });
-        }
+            })
+            .with({ callResult: P.select() }, (result) => {
+                console.log('result', result);
+                instances[result.receiver].worker
+                    .postMessage({ callResult: result });
+            })
+            .exhaustive();
     };
-
-    return worker;
 }
 
-// export function startWorker(
-//     dir: string,
-//     serviceName: string,
-//     def: PlantDef
-// ) {
-//     const code = workerCode(dir, serviceName, def.config);
-//     const blob = new Blob([code])
-//     const url = URL.createObjectURL(blob);
+type Service = {
+    worker: Worker;
+    plantDef: PlantDef;
+    plantName: string;
+};
 
-//     const worker = new Worker(url, { type: 'module' });
+function instantiateWorkers(dir: string, field: Field) {
+    const instances: Record<string, Service> = {};
 
-//     return worker;
-// }
+    for (const [plantName, plantDef] of Object.entries(field)) {
+        const servicePath = path.join(dir, plantName[0].toLowerCase() + plantName.slice(1));
+        const relativeUrl = "./worker.ts?plantName=" + plantName + "&servicePath=" + servicePath;
 
-// function workerCode(
-//     dir: string,
-//     serviceName: string,
-//     config: Record<string, any>
-// ) {
-//     const workerFileName = serviceName[0].toLowerCase() + serviceName.slice(1) + ".ts";
+        const worker = new Worker(new URL(relativeUrl, import.meta.url), {
+            type: "module",
+        });
+        instances[plantName] = { worker, plantDef, plantName };
+    }
 
-//     return `
-
-// `;
-// }
+    return instances;
+}

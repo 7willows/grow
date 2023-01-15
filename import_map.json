@@ -3,6 +3,7 @@
         "zod": "https://deno.land/x/zod@v3.20.2/mod.ts",
         "std/": "https://deno.land/std@0.171.0/",
         "lodash": "https://deno.land/x/lodash_es@v0.0.2/mod.ts",
-        "reflect-metadata": "https://deno.land/x/deno_reflect@v0.2.1/mod.ts"
+        "reflect-metadata": "https://deno.land/x/deno_reflect@v0.2.1/mod.ts",
+        "ts-pattern": "npm:ts-pattern@4.1.3"
     }
 }
