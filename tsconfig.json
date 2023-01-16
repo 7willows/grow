@@ -1,6 +1,17 @@
 {
     "compilerOptions": {
+        "allowJs": true,
+        "esModuleInterop": true,
         "experimentalDecorators": true,
+        "inlineSourceMap": true,
+        "isolatedModules": true,
+        "jsx": "react",
+        "lib": ["deno.window"],
+        "module": "esnext",
+        "moduleDetection": "force",
+        "strict": true,
+        "target": "esnext",
+        "useDefineForClassFields": true,
         "plugins": [
             {
                 "name": "typescript-deno-plugin",
