@@ -1,9 +1,9 @@
 import { inject } from "../../mod.ts";
-import type { IAccess, IManager, Item } from "./contract.ts";
+import { IAccess, IManager, Item } from "./contract.ts";
 
 export class Manager implements IManager {
 
-    @inject("Access")
+    @inject()
     private access!: IAccess;
 
     public async listItems(): Promise<Item[]> {

@@ -1,26 +1,32 @@
 import { Reflect } from "reflect-metadata";
 import * as _ from 'lodash';
 import { match, P } from "ts-pattern";
-import type { MsgToWorker, Call, CallResult } from './messages.ts';
+import type { MsgToWorker, Call, CallResult, WorkerToWorkerMsg } from './messages.ts';
 import { Deferred, defer } from "./defer.ts";
 
 const url = new URL(import.meta.url);
-const plantName = url.searchParams.get('plantName');
+const plantName = url.searchParams.get('plantName') ?? '';
 const servicePath = url.searchParams.get('servicePath');
 
 if (!plantName || !servicePath) {
     throw new Error("Missing plantName or servicePath");
 }
 
-const mod = await import(`${servicePath}.ts`);
-const plant = new mod[plantName]();
+let plantPromise: Promise<any>;
 const calls = new Map<string, Deferred<any>>();
+const ports = new Map<string, MessagePort>();
+
+ports.set('###MAIN', self);
 
 self.onmessage = (event: MessageEvent) => {
     match(event.data as MsgToWorker)
-        .with({ init: { config: P.select() } }, (config) => {
+        .with({ init: P.select() }, ({ config, toInject }) => {
             updateConfig(config);
-            initInjectables(plant);
+            toInject.forEach((injectedPlantName: string, index: number) => {
+                const port = event.ports[index];
+                listenOnPort(port);
+                ports.set(injectedPlantName, port);
+            });
         })
         .with({ configUpdate: P.select() }, (config) => {
             updateConfig(config);
@@ -31,10 +37,49 @@ self.onmessage = (event: MessageEvent) => {
         .with({ callResult: P.select() }, (result) => {
             manageResult(result);
         })
+        .with({ inject: P.select() }, ({ plantName }) => {
+            const port = event.ports[0];
+            listenOnPort(port);
+            ports.set(plantName, port);
+        })
         .exhaustive();
 }
 
-self.postMessage({ ready: true });
+function listenOnPort(port: MessagePort) {
+    port.onmessage = (event: MessageEvent) => {
+        match(event.data as WorkerToWorkerMsg)
+            .with({ call: P.select() }, (call) => {
+                callPlant(call);
+            })
+            .with({ callResult: P.select() }, (result) => {
+                manageResult(result);
+            })
+            .exhaustive();
+    };
+}
+
+async function getPlant() {
+    if (plantPromise) {
+        return plantPromise;
+    }
+
+    plantPromise = import(`${servicePath}.ts`)
+        .then((mod) => new mod[plantName]())
+        .catch(err => {
+            console.error(err)
+            throw err;
+        });
+
+    return plantPromise;
+}
+
+async function preInit() {
+    const plant = await getPlant();
+    const toInject = initInjectables(plant);
+    self.postMessage({ ready: { toInject } });
+}
+
+preInit();
 
 function manageResult(result: CallResult) {
     const deferred = calls.get(result.callId);
@@ -56,9 +101,18 @@ function manageResult(result: CallResult) {
 }
 
 async function callPlant(call: Call) {
+    const port = ports.get(call.caller);
+
+    if (!port) {
+        throw new Error(`No port for ${call.caller}`);
+    }
+
+    const plant = await getPlant();
+
     try {
         const result = await plant[call.method](...call.args);
-        self.postMessage({
+
+        port.postMessage({
             callResult: {
                 type: "success",
                 result,
@@ -67,7 +121,8 @@ async function callPlant(call: Call) {
             }
         });
     } catch (err) {
-        self.postMessage({
+        console.error('calling failed', err);
+        port.postMessage({
             callResult: {
                 callId: call.callId,
                 receiver: call.caller,
@@ -80,13 +135,25 @@ async function callPlant(call: Call) {
 }
 
 function initInjectables(plant: any) {
+    const toInject: string[] = [];
+
     for (const key of Object.keys(plant)) {
-        const meta = Reflect.getMetadata('inject', plant, key)
+        let meta = Reflect.getMetadata('inject', plant, key)
+
         if (!meta) {
             continue;
         }
+
+        if (meta === "###DEDUCE") {
+            meta = key[0].toUpperCase() + key.slice(1);
+        }
+
+        toInject.push(meta);
+
         plant[key] = buildProxy(meta);
     }
+
+    return toInject
 }
 
 function buildProxy(targetService: string) {
@@ -101,7 +168,13 @@ function buildProxy(targetService: string) {
 
                 calls.set(callId, deferred);
 
-                self.postMessage({
+                const port = ports.get(targetService);
+
+                if (!port) {
+                    throw new Error(`No port for ${targetService}`);
+                }
+
+                port.postMessage({
                     call: {
                         method: prop,
                         args,
@@ -117,7 +190,9 @@ function buildProxy(targetService: string) {
     });
 }
 
-function updateConfig(config: any) {
+async function updateConfig(config: any) {
+    const plant = await getPlant();
+
     for (const key of Object.keys(plant)) {
         const configPath = Reflect.getMetadata('config', plant, key);
         if (configPath) {

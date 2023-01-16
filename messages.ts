@@ -12,11 +12,16 @@ export type Call = {
 
 export type MsgToWorker
     = { configUpdate: any }
-    | { init: { config: any } }
+    | { init: { config: any, toInject: string[] } }
+    | { inject: { plantName: string } }
     | { call: Call }
     | { callResult: CallResult }
 
 export type MsgFromWorker
-    = { ready: true }
+    = { ready: { toInject: string[] } }
     | { call: Call }
     | { callResult: { toPlant: string, result: CallResult } }
+
+export type WorkerToWorkerMsg
+    = { call: Call }
+    | { callResult: CallResult }

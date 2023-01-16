@@ -9,8 +9,8 @@ export function config(cfgPath?: string): PropertyDecorator {
     return Reflect.metadata("config", cfgPath);
 }
 
-export function inject(serviceName: string): PropertyDecorator {
-    return Reflect.metadata("inject", serviceName);
+export function inject(serviceName?: string): PropertyDecorator {
+    return Reflect.metadata("inject", serviceName || "###DEDUCE");
 }
 
 export const PlantDef = z.object({
@@ -40,12 +40,16 @@ async function serviceCommunication(
 
     service.worker.onmessage = (event) => {
         match<MsgFromWorker, void>(event.data)
-            .with({ ready: true }, () => {
+            .with({ ready: P.select() }, ({ toInject }) => {
+
+                const portsMap = openChannels(service.plantName, toInject, instances);
+
                 service.worker.postMessage({
                     init: {
-                        config: service.plantDef.config
+                        config: service.plantDef.config,
+                        toInject: Object.keys(portsMap),
                     },
-                });
+                }, Object.values(portsMap));
 
                 // TEST CODE:
                 if (plantName === "Manager") {
@@ -53,7 +57,7 @@ async function serviceCommunication(
                         call: {
                             method: "listItems",
                             args: [],
-                            caller: "Manager",
+                            caller: "###MAIN",
                             receiver: "Manager",
                             callId: "1",
                         }
@@ -67,11 +71,39 @@ async function serviceCommunication(
             })
             .with({ callResult: P.select() }, (result) => {
                 console.log('result', result);
-                instances[result.receiver].worker
-                    .postMessage({ callResult: result });
             })
             .exhaustive();
     };
+}
+
+const channels = new Map<string, MessageChannel>();
+
+function openChannels(
+    plantName: string,
+    toInject: string[],
+    instances: Record<string, Service>
+) {
+    const portsMap: Record<string, MessagePort> = {};
+
+    for (const serviceName of toInject) {
+        if (
+            channels.has(serviceName + '-' + plantName)
+            || channels.has(plantName + '-' + serviceName)
+        ) {
+            continue;
+        }
+
+        const channel = new MessageChannel();
+        channels.set(plantName + '-' + serviceName, channel);
+        portsMap[serviceName] = channel.port1;
+        instances[serviceName].worker.postMessage({
+            inject: {
+                plantName,
+            }
+        }, [channel.port2]);
+    }
+
+    return portsMap;
 }
 
 type Service = {
