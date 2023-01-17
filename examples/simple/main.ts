@@ -15,8 +15,4 @@ grow({
       http: true,
     },
   },
-  rewrite: {
-    "GET /items/:id": "/manager/get-by-id?[id]",
-    "DELETE /items/:id": "/manager/delete-by-id?[id]",
-  },
 });

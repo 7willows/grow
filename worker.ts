@@ -6,7 +6,7 @@ import type {
   CallResult,
   MsgToWorker,
   WorkerToWorkerMsg,
-} from "./messages.ts";
+} from "./types.ts";
 import { defer, Deferred } from "./defer.ts";
 
 const url = new URL(import.meta.url);

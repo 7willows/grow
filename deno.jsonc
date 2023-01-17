@@ -2,7 +2,7 @@
     "importMap": "import_map.json",
     "tasks": {
         "run": "deno run --allow-net --allow-read --allow-env",
-        "example:simple": "deno task run examples/simple/main.ts",
+        "example:simple": "deno task run examples/simple/main.ts"
     },
     "lint": {
         "rules": {
