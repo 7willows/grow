@@ -11,7 +11,7 @@ import { defer, Deferred } from "./defer.ts";
 
 const url = new URL(import.meta.url);
 const plantName = url.searchParams.get("plantName") ?? "";
-const servicePath = url.searchParams.get("servicePath");
+const servicePath = url.searchParams.get("servicePath") ?? "";
 
 if (!plantName || !servicePath) {
   throw new Error("Missing plantName or servicePath");
@@ -32,6 +32,7 @@ self.onmessage = (event: MessageEvent) => {
         listenOnPort(port);
         ports.set(injectedPlantName, port);
       });
+      self.postMessage({ initialized: true });
     })
     .with({ configUpdate: P.select() }, (config) => {
       updateConfig(config);
@@ -68,7 +69,7 @@ async function getPlant() {
     return plantPromise;
   }
 
-  plantPromise = import(`${servicePath}.ts`)
+  plantPromise = import(servicePath)
     .then((mod) => new mod[plantName]())
     .catch((err) => {
       console.error(err);

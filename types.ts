@@ -4,11 +4,11 @@ export const PlantDef = z.object({
   contracts: z.array(z.any()),
   config: z.record(z.any()).optional(),
   http: z.boolean().optional(),
+  filePath: z.string().optional(),
 });
 export type PlantDef = z.infer<typeof PlantDef>;
 
 export const Field = z.object({
-  debug: z.boolean().optional(),
   plants: z.record(PlantDef),
 });
 export type Field = z.infer<typeof Field>;
@@ -40,6 +40,7 @@ export type MsgToWorker =
 
 export type MsgFromWorker =
   | { ready: { toInject: string[] } }
+  | { initialized: true }
   | { callResult: CallResult };
 
 export type WorkerToWorkerMsg =

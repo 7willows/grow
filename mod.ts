@@ -13,16 +13,62 @@ const calls = new Map<string, Deferred<any>>();
 export async function grow(field: Field) {
   field = Field.parse(field);
   const servicesDir = path.dirname(caller() ?? "");
+  const initializedIndicator = new Map<string, Deferred<any>>();
+
+  for (const plantName of Object.keys(field.plants)) {
+    initializedIndicator.set(plantName, defer());
+  }
+
   const instances = instantiateWorkers(servicesDir, field);
 
   await Promise.all(
     Object.keys(instances).map((plantName) => {
-      return serviceCommunication(plantName, instances);
+      return serviceCommunication(
+        plantName,
+        instances,
+        initializedIndicator,
+      );
     }),
   );
 
   if (isHttpEnabled(field)) {
     startHttpServer(field, instances, callMethod);
+  }
+
+  await Promise.all(
+    Array.from(initializedIndicator.values())
+      .map((v) => v.promise),
+  );
+
+  return {
+    stop: () => stop(field, instances),
+    proxy<T>(plantName: string): T {
+      return new Proxy({}, {
+        get: (_, methodName: string) => {
+          return async (...args: any[]) => {
+            const r = await callMethod({
+              plantName,
+              methodName,
+              args,
+              instances,
+            });
+
+            if ("error" in r) {
+              throw new Error(r.error);
+            }
+
+            return r.result;
+          };
+        },
+      }) as any;
+    },
+  };
+}
+
+function stop(field: Field, instances: Record<string, Service>) {
+  for (const plantName of Object.keys(field.plants)) {
+    const service = instances[plantName];
+    service.worker.terminate();
   }
 }
 
@@ -47,6 +93,7 @@ const callMethod: CallMethod = (cfg) => {
 function serviceCommunication(
   plantName: string,
   instances: Record<string, Service>,
+  initializedIndicator: Map<string, Deferred<any>>,
 ) {
   const service = instances[plantName];
 
@@ -61,6 +108,9 @@ function serviceCommunication(
             toInject: Object.keys(portsMap),
           },
         }, Object.values(portsMap));
+      })
+      .with({ initialized: true }, () => {
+        initializedIndicator.get(plantName)?.resolve(true);
       })
       .with({ callResult: P.select() }, (result) => {
         const deferred = calls.get(result.callId);
@@ -108,10 +158,11 @@ function instantiateWorkers(dir: string, field: Field) {
   const instances: Record<string, Service> = {};
 
   for (const [plantName, plantDef] of Object.entries(field.plants)) {
-    const servicePath = path.join(
-      dir,
-      plantName[0].toLowerCase() + plantName.slice(1),
-    );
+    const filePathSuffix = plantDef.filePath
+      ? plantDef.filePath
+      : plantName[0].toLowerCase() + plantName.slice(1) + ".ts";
+
+    const servicePath = path.join(dir, filePathSuffix);
     const relativeUrl = "./worker.ts?plantName=" + plantName + "&servicePath=" +
       servicePath;
 
