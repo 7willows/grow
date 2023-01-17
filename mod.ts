@@ -16,10 +16,15 @@ export function inject(serviceName?: string): PropertyDecorator {
 export const PlantDef = z.object({
   contracts: z.object({}).passthrough().array(),
   config: z.record(z.any()).optional(),
+  http: z.boolean().optional(),
 });
 export type PlantDef = z.infer<typeof PlantDef>;
 
-export const Field = z.record(PlantDef);
+export const Field = z.object({
+  debug: z.boolean().optional(),
+  plants: z.record(PlantDef),
+  rewrite: z.record(z.string()).optional(),
+});
 export type Field = z.infer<typeof Field>;
 
 export async function grow(field: Field) {
@@ -64,10 +69,6 @@ async function serviceCommunication(
             },
           });
         }
-      })
-      .with({ call: P.select() }, (call) => {
-        instances[call.receiver].worker
-          .postMessage({ call });
       })
       .with({ callResult: P.select() }, (result) => {
         console.log("result", result);
@@ -115,7 +116,7 @@ type Service = {
 function instantiateWorkers(dir: string, field: Field) {
   const instances: Record<string, Service> = {};
 
-  for (const [plantName, plantDef] of Object.entries(field)) {
+  for (const [plantName, plantDef] of Object.entries(field.plants)) {
     const servicePath = path.join(
       dir,
       plantName[0].toLowerCase() + plantName.slice(1),

@@ -19,7 +19,6 @@ export type MsgToWorker =
 
 export type MsgFromWorker =
   | { ready: { toInject: string[] } }
-  | { call: Call }
   | { callResult: { toPlant: string; result: CallResult } };
 
 export type WorkerToWorkerMsg =
