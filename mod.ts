@@ -10,6 +10,8 @@ export * from "./decorators.ts";
 
 const calls = new Map<string, Deferred<any>>();
 
+export type Crops = Awaited<ReturnType<typeof grow>>;
+
 export async function grow(field: Field) {
   field = Field.parse(field);
   const servicesDir = path.dirname(caller() ?? "");
@@ -31,18 +33,18 @@ export async function grow(field: Field) {
     }),
   );
 
-  if (isHttpEnabled(field)) {
-    startHttpServer(field, instances, callMethod);
-  }
-
   await Promise.all(
     Array.from(initializedIndicator.values())
       .map((v) => v.promise),
   );
 
+  if (isHttpEnabled(field)) {
+    startHttpServer(field, instances, callMethod);
+  }
+
   return {
     stop: () => stop(field, instances),
-    proxy<T>(plantName: string): T {
+    proxy<T>(plantName: string) {
       return new Proxy({}, {
         get: (_, methodName: string) => {
           return async (...args: any[]) => {
@@ -60,7 +62,7 @@ export async function grow(field: Field) {
             return r.result;
           };
         },
-      }) as any;
+      }) as T;
     },
   };
 }

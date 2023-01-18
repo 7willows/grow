@@ -16,6 +16,12 @@ export function startHttpServer(
 
   routes({ app, field, instances, callMethod });
 
+  setTimeout(() => {
+    if (field.http) {
+      field.http(app);
+    }
+  });
+
   serve(app.fetch);
 }
 
