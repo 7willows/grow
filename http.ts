@@ -1,10 +1,14 @@
 import { Context, Hono } from "hono";
+import { StatusCode } from "hono/utils/http-status.ts";
+import { serveStatic } from "hono/middleware.ts";
 import { serve } from "std/http/server.ts";
 import { CallMethod, Field, Service } from "./types.ts";
 import { z } from "zod";
+import { match, P } from "ts-pattern";
 
 export function isHttpEnabled(field: Field) {
-  return Object.values(field.plants).some((plant) => plant.http);
+  return field.http ||
+    Object.values(field.plants).some((plant) => plant.http);
 }
 
 export function startHttpServer(
@@ -16,13 +20,28 @@ export function startHttpServer(
 
   routes({ app, field, instances, callMethod });
 
+  app.use("/grow.js", serveStatic({ path: "./client.js" }));
+
+  app.onError((err, c) => {
+    const status = match<[string, string], StatusCode>([err.message, err.name])
+      .with(["notFound", P._], () => 404)
+      .with(["unauthorized", P._], () => 401)
+      .with(["forbidden", P._], () => 403)
+      .with(["badRequest", P._], () => 400)
+      .with(["conflict", P._], () => 409)
+      .with([P._, "ZodError"], () => 400)
+      .otherwise(() => 500);
+
+    return c.json(err, status);
+  });
+
   setTimeout(() => {
     if (field.http) {
       field.http(app);
     }
   });
 
-  serve(app.fetch);
+  serve(app.fetch as any);
 }
 
 function routes(cfg: {
@@ -77,13 +96,15 @@ function handleRequest(cfg: {
   callMethod: CallMethod;
 }) {
   return async (c: Context<any, any, any>) => {
-    const args = await c.req.json();
+    const args = await c.req.json() as any[];
     const argsDef = cfg.methodDef._def.args._def.items;
     const parsed: any[] = [];
 
-    for (const argDef of argsDef) {
-      parsed.push(argDef.parse(args));
-    }
+    z.any().array().parse(args);
+
+    argsDef.forEach((argDef: any, i: number) => {
+      parsed.push(argDef.parse(args[i]));
+    });
 
     const result = await cfg.callMethod({
       plantName: cfg.plantName,

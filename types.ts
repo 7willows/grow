@@ -9,13 +9,12 @@ export const PlantDef = z.object({
 });
 export type PlantDef = z.infer<typeof PlantDef>;
 
-
-export type HttpFunction = (app: Hono) => void;
+export type HttpFunction = (app: Hono<any, any, any>) => void;
 export const HttpFunction: z.ZodType<HttpFunction> = z.any();
 
 export const Field = z.object({
   plants: z.record(PlantDef),
-  http: HttpFunction.optional()
+  http: HttpFunction.optional(),
 });
 export type Field = z.infer<typeof Field>;
 
@@ -61,3 +60,14 @@ type CallMethodCfg = {
 };
 
 export type CallMethod = (cfg: CallMethodCfg) => Promise<CallResult>;
+
+export type GrowClient = {
+  plant<T>(plantName: string): T;
+  sessionId: string | null;
+  addEventListener(eventType: string, listener: (event: any) => void): void;
+  removeEventListener(
+    eventType: string,
+    listener: (event: any) => void,
+  ): void;
+  dispatchEvent(event: any): void;
+};

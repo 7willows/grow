@@ -6,6 +6,20 @@
   </head>
   <body>
 TEST
+
+    <script src="/grow.js"></script>
+    <script type="module">
+     const manager = grow.plant("Manager");
+
+     try {
+         const res = await manager.listItems(3);
+         console.log('wwwww', res);
+
+     } catch (err) {
+         console.log('err', err);
+     }
+     
+    </script>
     
   </body>
 </html>

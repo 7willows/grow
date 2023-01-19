@@ -16,7 +16,7 @@ const crops = await grow({
     },
   },
   http(app) {
-    const mgr: IManager = crops.proxy("Manager");
+    const mgr: IManager = crops.plant("Manager");
 
     app.get(
       "*",

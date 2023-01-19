@@ -5,9 +5,9 @@ export class Manager implements IManager {
   @inject()
   private access!: IAccess;
 
-  public async listItems(): Promise<Item[]> {
-    const item1 = await this.access.getItem("test1");
-    const item2 = await this.access.getItem("test2");
+  public async listItems(prefix: string): Promise<Item[]> {
+    const item1 = await this.access.getItem(prefix + "test1");
+    const item2 = await this.access.getItem(prefix + "test2");
 
     return [
       item1,

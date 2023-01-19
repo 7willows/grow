@@ -7,11 +7,15 @@ export const Item = z.object({
 export type Item = z.infer<typeof Item>;
 
 export const IManager = z.object({
-  listItems: z.function().returns(Item.array().promise()),
+  listItems: z.function()
+    .args(z.string())
+    .returns(Item.array().promise()),
 });
 export type IManager = z.infer<typeof IManager>;
 
 export const IAccess = z.object({
-  getItem: z.function().args(z.string()).returns(Item.promise()),
+  getItem: z.function()
+    .args(z.string())
+    .returns(Item.promise()),
 });
 export type IAccess = z.infer<typeof IAccess>;

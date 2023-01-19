@@ -5,6 +5,7 @@ import { match, P } from "ts-pattern";
 import { defer, Deferred } from "./defer.ts";
 import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
+export type { GrowClient } from "./types.ts";
 
 export * from "./decorators.ts";
 
@@ -43,8 +44,8 @@ export async function grow(field: Field) {
   }
 
   return {
-    stop: () => stop(field, instances),
-    proxy<T>(plantName: string) {
+    kill: () => stop(field, instances),
+    plant<T>(plantName: string) {
       return new Proxy({}, {
         get: (_, methodName: string) => {
           return async (...args: any[]) => {

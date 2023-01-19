@@ -3,12 +3,12 @@ import { grow } from "./mod.ts";
 import { IAccess, IManager } from "./examples/simple/contract.ts";
 
 Deno.test("basic field", async () => {
-  const app = await startGrow();
-  const result = await app.proxy<IManager>("Manager").listItems();
+  const crops = await startGrow();
+  const result = await crops.plant<IManager>("Manager").listItems("ok");
 
   assertEquals(result.length, 2);
 
-  app.stop();
+  crops.kill();
 });
 
 function startGrow() {
