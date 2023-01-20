@@ -1,4 +1,4 @@
-import { Reflect } from "reflect-metadata";
+import { Reflect } from "./deps.ts";
 
 export function config(cfgPath?: string): PropertyDecorator {
   return Reflect.metadata("config", cfgPath);

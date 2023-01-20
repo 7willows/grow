@@ -1,10 +1,7 @@
-import { Context, Hono } from "hono";
-import { StatusCode } from "hono/utils/http-status.ts";
-import { serveStatic } from "hono/middleware.ts";
-import { serve } from "std/http/server.ts";
+import {
+  z, match, P, Context, Hono, StatusCode, serveStatic, serve
+} from "./deps.ts";
 import { CallMethod, Field, Service } from "./types.ts";
-import { z } from "zod";
-import { match, P } from "ts-pattern";
 
 export function isHttpEnabled(field: Field) {
   return field.http ||

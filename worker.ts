@@ -1,6 +1,4 @@
-import { Reflect } from "reflect-metadata";
-import * as _ from "lodash";
-import { match, P } from "ts-pattern";
+import { Reflect, _, match, P } from "./deps.ts";
 import type {
   Call,
   CallResult,

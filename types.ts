@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { Hono } from "hono";
+import { z, Hono } from "./deps.ts";
 
 export const PlantDef = z.object({
   contracts: z.array(z.any()),

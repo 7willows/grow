@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "../../deps.ts";
 
 export const Item = z.object({
   id: z.number(),

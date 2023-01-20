@@ -12,9 +12,8 @@ TEST
      const manager = grow.plant("Manager");
 
      try {
-         const res = await manager.listItems(3);
+         const res = await manager.listItems("ok");
          console.log('wwwww', res);
-
      } catch (err) {
          console.log('err', err);
      }

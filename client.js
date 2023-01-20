@@ -9,7 +9,6 @@ class ZodError extends Error {
 (function () {
     const listeners = {};
     
-    
     window.grow = {
         plant(plantName) {
             return new Proxy({}, {
@@ -36,7 +35,11 @@ class ZodError extends Error {
             listeners.forEach(listener => listener(event));
         },
         set sessionId(sessionId) {
-            if (sessionId === null) {
+            if (sessionId === null || sessionId === undefined) {
+                if (sessionId === undefined) {
+                    console.warn("sessionId can be a string or null but not undefined");
+                }
+                
                 localStorage.deleteItem("sessionId");
                 this.dispatchEvent(new CustomEvent('logout'));
             } else {

@@ -1,4 +1,4 @@
-import { assertEquals } from "std/testing/asserts.ts";
+import { assertEquals } from "./deps.ts";
 import { grow } from "./mod.ts";
 import { IAccess, IManager } from "./examples/simple/contract.ts";
 

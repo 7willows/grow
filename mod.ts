@@ -1,7 +1,4 @@
-import { z } from "zod";
-import caller from "https://deno.land/x/caller@0.1.4/caller.ts";
-import * as path from "std/path/mod.ts";
-import { match, P } from "ts-pattern";
+import { z, caller, path, match, P } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
