@@ -7,4 +7,4 @@
 - message bus
 - websocket
 - logs and ctx (as `this`)
-
+- remove npm:ts-pattern dependency
