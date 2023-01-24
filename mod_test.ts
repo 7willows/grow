@@ -11,6 +11,19 @@ Deno.test("basic field", async () => {
   crops.kill();
 });
 
+Deno.test("sessionId", async () => {
+  const crops = await startGrow();
+
+  try {
+    const result = await crops.plant<IManager>("Manager", "ABC").getSession();
+    assertEquals(result, "ABC");
+  } catch (err) {
+    console.error(err);
+  } finally {
+    crops.kill();
+  }
+});
+
 function startGrow() {
   return grow({
     plants: {

@@ -1,6 +1,14 @@
 import {
-  z, match, P, Context, Hono, StatusCode, serveStatic, serve
+  Context,
+  Hono,
+  match,
+  P,
+  serve,
+  serveStatic,
+  StatusCode,
+  z,
 } from "./deps.ts";
+import { path } from "./deps.ts";
 import { CallMethod, Field, Service } from "./types.ts";
 
 export function isHttpEnabled(field: Field) {
@@ -17,7 +25,7 @@ export function startHttpServer(
 
   routes({ app, field, instances, callMethod });
 
-  app.use("/grow.js", serveStatic({ path: "./client.js" }));
+  serveClient(app);
 
   app.onError((err, c) => {
     const status = match<[string, string], StatusCode>([err.message, err.name])
@@ -39,6 +47,17 @@ export function startHttpServer(
   });
 
   serve(app.fetch as any);
+}
+
+function serveClient(app: Hono) {
+  const client = Deno.readTextFileSync(
+    path.join(new URL(".", import.meta.url).pathname, "./client.js"),
+  );
+
+  app.get("/grow.js", (c) => {
+    c.header("content-type", "application/javascript");
+    return c.text(client);
+  });
 }
 
 function routes(cfg: {
@@ -108,6 +127,8 @@ function handleRequest(cfg: {
       methodName: cfg.methodName,
       args: parsed,
       instances: cfg.instances,
+      sessionId: c.req.header("grow-session-id") ?? "",
+      requestId: c.req.header("grow-request-id") ?? "",
     });
 
     if ("error" in result) {

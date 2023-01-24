@@ -1,4 +1,4 @@
-import { z, Hono } from "./deps.ts";
+import { Hono, z } from "./deps.ts";
 
 export const PlantDef = z.object({
   contracts: z.array(z.any()),
@@ -28,6 +28,8 @@ export type CallResult =
   | { type: "error"; error: string; receiver: string; callId: string };
 
 export type Call = {
+  sessionId: string;
+  requestId: string;
   caller: string;
   receiver: string;
   method: string;
@@ -52,6 +54,8 @@ export type WorkerToWorkerMsg =
   | { callResult: CallResult };
 
 type CallMethodCfg = {
+  sessionId: string;
+  requestId: string;
   plantName: string;
   methodName: string;
   args: any[];

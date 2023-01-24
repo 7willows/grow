@@ -1,4 +1,4 @@
-import { z, caller, path, match, P } from "./deps.ts";
+import { caller, existsSync, match, P, path } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
@@ -12,7 +12,7 @@ export type Crops = Awaited<ReturnType<typeof grow>>;
 
 export async function grow(field: Field) {
   field = Field.parse(field);
-  const servicesDir = path.dirname(caller() ?? "");
+  const servicesDir = path.dirname(caller() ?? "").split("file://")[1] ?? "";
   const initializedIndicator = new Map<string, Deferred<any>>();
 
   for (const plantName of Object.keys(field.plants)) {
@@ -42,11 +42,16 @@ export async function grow(field: Field) {
 
   return {
     kill: () => stop(field, instances),
-    plant<T>(plantName: string) {
+    plant<T>(
+      plantName: string,
+      sessionId?: string,
+    ) {
       return new Proxy({}, {
         get: (_, methodName: string) => {
           return async (...args: any[]) => {
             const r = await callMethod({
+              sessionId: sessionId ?? "",
+              requestId: crypto.randomUUID(),
               plantName,
               methodName,
               args,
@@ -82,6 +87,8 @@ const callMethod: CallMethod = (cfg) => {
       caller: "###MAIN",
       receiver: cfg.plantName,
       method: cfg.methodName,
+      sessionId: cfg.sessionId,
+      requestId: cfg.requestId,
       args: cfg.args,
       callId,
     },
@@ -154,21 +161,44 @@ function openChannels(
   return portsMap;
 }
 
+function toUnderscoreCase(text: string) {
+  text = text[0].toLowerCase() + text.slice(1);
+  return text.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+function determineServicePath(dir: string, plantName: string) {
+  const fileName = toUnderscoreCase(plantName);
+  let p = path.join(dir, fileName + ".ts");
+
+  if (existsSync(p)) {
+    return p;
+  }
+
+  p = path.join(dir, fileName, "mod.ts");
+
+  if (existsSync(p)) {
+    return p;
+  }
+
+  throw new Error("Could not find service " + plantName);
+}
+
 function instantiateWorkers(dir: string, field: Field) {
   const instances: Record<string, Service> = {};
 
   for (const [plantName, plantDef] of Object.entries(field.plants)) {
-    const filePathSuffix = plantDef.filePath
-      ? plantDef.filePath
-      : plantName[0].toLowerCase() + plantName.slice(1) + ".ts";
+    const servicePath = plantDef.filePath
+      ? path.join(dir, plantDef.filePath)
+      : determineServicePath(dir, plantName);
 
-    const servicePath = path.join(dir, filePathSuffix);
-    const relativeUrl = "./worker.ts?plantName=" + plantName + "&servicePath=" +
-      servicePath;
+    const queryString = `plantName=${plantName}&servicePath=${servicePath}`;
 
-    const worker = new Worker(new URL(relativeUrl, import.meta.url), {
-      type: "module",
-    });
+    const worker = new Worker(
+      new URL(`./worker.ts?${queryString}`, import.meta.url),
+      {
+        type: "module",
+      },
+    );
     instances[plantName] = { worker, plantDef, plantName };
   }
 
