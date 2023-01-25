@@ -70,7 +70,7 @@ function routes(cfg: {
     const plantNameDashCase = toDashCase(plantName);
 
     for (const contract of plantDef.contracts) {
-      for (const [methodName, methodDef] of Object.entries(contract.shape)) {
+      for (const [methodName] of Object.entries(contract.shape)) {
         const methodDashCase = toDashCase(methodName);
 
         const url = `/${plantNameDashCase}/${methodDashCase}`;
@@ -80,7 +80,6 @@ function routes(cfg: {
           handleRequest({
             plantName,
             methodName,
-            methodDef: methodDef as z.ZodFunction<any, any>,
             instances: cfg.instances,
             callMethod: cfg.callMethod,
           }),
@@ -107,25 +106,16 @@ function toDashCase(text: string) {
 function handleRequest(cfg: {
   plantName: string;
   methodName: string;
-  methodDef: z.ZodFunction<any, any>;
   instances: Record<string, Service>;
   callMethod: CallMethod;
 }) {
   return async (c: Context<any, any, any>) => {
     const args = await c.req.json() as any[];
-    const argsDef = cfg.methodDef._def.args._def.items;
-    const parsed: any[] = [];
-
-    z.any().array().parse(args);
-
-    argsDef.forEach((argDef: any, i: number) => {
-      parsed.push(argDef.parse(args[i]));
-    });
 
     const result = await cfg.callMethod({
       plantName: cfg.plantName,
       methodName: cfg.methodName,
-      args: parsed,
+      args,
       instances: cfg.instances,
       sessionId: c.req.header("grow-session-id") ?? "",
       requestId: c.req.header("grow-request-id") ?? "",

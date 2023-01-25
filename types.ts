@@ -21,6 +21,7 @@ export type Service = {
   worker: Worker;
   plantDef: PlantDef;
   plantName: string;
+  contracts: z.ZodObject<any>[];
 };
 
 export type CallResult =

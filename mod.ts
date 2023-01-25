@@ -1,4 +1,4 @@
-import { caller, existsSync, log, match, P, path } from "./deps.ts";
+import { caller, existsSync, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
@@ -79,7 +79,44 @@ function stop(field: Field, instances: Record<string, Service>) {
   }
 }
 
+function ensureValidArgs(cfg: {
+  instances: Record<string, Service>;
+  args: any[];
+  plantName: string;
+  methodName: string;
+}) {
+  const contracts = cfg.instances[cfg.plantName]?.contracts ?? [];
+  let methodDef: any;
+
+  outer:
+  for (const contract of contracts) {
+    for (const [methodName, def] of Object.entries(contract.shape)) {
+      if (methodName === cfg.methodName) {
+        methodDef = def;
+        break outer;
+      }
+    }
+  }
+
+  if (!methodDef) {
+    throw new Error("method not found");
+  }
+
+  const argsDef = methodDef._def.args._def.items;
+  const parsed: any[] = [];
+
+  z.any().array().parse(cfg.args);
+
+  argsDef.forEach((argDef: any, i: number) => {
+    parsed.push(argDef.parse(cfg.args[i]));
+  });
+
+  return parsed;
+}
+
 const callMethod: CallMethod = (cfg) => {
+  cfg.args = ensureValidArgs(cfg);
+
   const callId = crypto.randomUUID();
   const deferred = defer();
   calls.set(callId, deferred);
@@ -201,7 +238,13 @@ function instantiateWorkers(dir: string, field: Field) {
         type: "module",
       },
     );
-    instances[plantName] = { worker, plantDef, plantName };
+
+    instances[plantName] = {
+      worker,
+      plantDef,
+      plantName,
+      contracts: plantDef.contracts,
+    };
   }
 
   return instances;
