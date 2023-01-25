@@ -19,3 +19,7 @@ export function requestId(): PropertyDecorator {
 export function logger(): PropertyDecorator {
   return Reflect.metadata("logger", true);
 }
+
+export function init(): MethodDecorator {
+  return Reflect.metadata("init", true);
+}

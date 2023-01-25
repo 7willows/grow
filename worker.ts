@@ -1,4 +1,5 @@
-import { _, match, P, Reflect } from "./deps.ts";
+import { _, log, match, P, Reflect } from "./deps.ts";
+
 import type {
   Call,
   CallResult,
@@ -24,13 +25,15 @@ ports.set("###MAIN", self as any);
 
 self.onmessage = (event: MessageEvent) => {
   match(event.data as MsgToWorker)
-    .with({ init: P.select() }, ({ config, toInject }) => {
-      updateConfig(config);
+    .with({ init: P.select() }, async ({ config, toInject }) => {
+      await updateConfig(config);
+      assignLoggers();
       toInject.forEach((injectedPlantName: string, index: number) => {
         const port = event.ports[index];
         listenOnPort(port);
         ports.set(injectedPlantName, port);
       });
+      await callInit();
       self.postMessage({ initialized: true });
     })
     .with({ configUpdate: P.select() }, (config) => {
@@ -50,6 +53,15 @@ self.onmessage = (event: MessageEvent) => {
     .exhaustive();
 };
 
+async function assignLoggers() {
+  const plant = await getPlant();
+  const loggers = propsByMetadata("logger", plant);
+
+  for (const key of loggers) {
+    plant[key] = growLogger(`${plantName}.init()`, "", "");
+  }
+}
+
 function listenOnPort(port: MessagePort) {
   port.onmessage = (event: MessageEvent) => {
     match(event.data as WorkerToWorkerMsg)
@@ -63,7 +75,7 @@ function listenOnPort(port: MessagePort) {
   };
 }
 
-async function getPlant() {
+function getPlant() {
   if (plantPromise) {
     return plantPromise;
   }
@@ -71,7 +83,7 @@ async function getPlant() {
   plantPromise = import(servicePath)
     .then((mod) => new mod[plantName]())
     .catch((err) => {
-      console.error(err);
+      console.error(`importing service ${servicePath} failed`, err);
       throw err;
     });
 
@@ -113,15 +125,22 @@ async function callPlant(call: Call) {
   }
 
   const plant = await getPlant();
+  const logger = growLogger(
+    `${plantName}.${call.method}()`,
+    call.sessionId,
+    call.requestId,
+  );
 
   try {
     const wrappedPlant = wrapPlant(plant, {
       sessionId: call.sessionId,
-      logger: console,
+      logger,
       requestId: call.requestId,
     });
 
+    logger.debug("started");
     const result = await wrappedPlant[call.method](...call.args);
+    logger.debug("success");
 
     port.postMessage({
       callResult: {
@@ -132,7 +151,7 @@ async function callPlant(call: Call) {
       },
     });
   } catch (err) {
-    console.error("calling failed", err);
+    logger.error("failure", err);
     port.postMessage({
       callResult: {
         callId: call.callId,
@@ -145,16 +164,14 @@ async function callPlant(call: Call) {
   }
 }
 
-function wrapPlant<T extends Object>(
+function wrapPlant<T extends Record<string, unknown>>(
   plant: T,
-  cfg: { sessionId: string; logger: Console; requestId: string },
+  cfg: { sessionId: string; logger: log.Logger; requestId: string },
 ): T {
-  const sessionIds = sessionIdProps(plant);
-  const loggers = loggerProps(plant);
-  const requestIds = requestIdProps(plant);
-  const injected = injectedProps(plant);
-
-  // TODO modify all injectables so that sessionIds and requestIds will be inherited
+  const sessionIds = propsByMetadata("sessionId", plant);
+  const loggers = propsByMetadata("logger", plant);
+  const requestIds = propsByMetadata("requestId", plant);
+  const injected = propsByMetadata("inject", plant);
 
   const wrapped = Object.create(plant);
 
@@ -186,53 +203,14 @@ function wrapPlant<T extends Object>(
   return wrapped;
 }
 
-function sessionIdProps(plant: any) {
+function propsByMetadata(metadataKey: string, plant: any) {
   const props = [];
+  const keys = Object.getOwnPropertyNames(plant).concat(
+    Object.getOwnPropertyNames(Object.getPrototypeOf(plant)),
+  );
 
-  for (const key of Object.keys(plant)) {
-    const meta = Reflect.getMetadata("sessionId", plant, key);
-
-    if (meta) {
-      props.push(key);
-    }
-  }
-
-  return props;
-}
-
-function injectedProps(plant: any) {
-  const props = [];
-
-  for (const key of Object.keys(plant)) {
-    const meta = Reflect.getMetadata("inject", plant, key);
-
-    if (meta) {
-      props.push(key);
-    }
-  }
-
-  return props;
-}
-
-function requestIdProps(plant: any) {
-  const props = [];
-
-  for (const key of Object.keys(plant)) {
-    const meta = Reflect.getMetadata("requestId", plant, key);
-
-    if (meta) {
-      props.push(key);
-    }
-  }
-
-  return props;
-}
-
-function loggerProps(plant: any) {
-  const props = [];
-
-  for (const key of Object.keys(plant)) {
-    const meta = Reflect.getMetadata("logger", plant, key);
+  for (const key of keys) {
+    const meta = Reflect.getMetadata(metadataKey, plant, key);
 
     if (meta) {
       props.push(key);
@@ -312,4 +290,41 @@ async function updateConfig(config: any) {
       plant[key] = _.get(config, configPath, undefined);
     }
   }
+}
+
+async function callInit() {
+  const plant = await getPlant();
+  const initFns = propsByMetadata("init", plant);
+
+  for (const fn of initFns) {
+    await plant[fn]();
+  }
+}
+
+function growLogger(name: string, sessionId?: string, requestId?: string) {
+  log.setup({
+    //define handlers
+    handlers: {
+      debug: new log.handlers.ConsoleHandler("DEBUG", {
+        formatter: function debugFormatter(rec: log.LogRecord) {
+          const base = `${rec.datetime.toISOString()} [${rec.levelName}] ` +
+            `[${name}] ${rec.msg} | sid:${sessionId} rid:${requestId}`;
+
+          let extra = rec.args.map((arg) => JSON.stringify(arg))
+            .join(" | ");
+
+          extra = extra ? " | " + extra : "";
+
+          return base + extra;
+        },
+      }),
+    },
+    loggers: {
+      [name]: {
+        level: "DEBUG",
+        handlers: ["debug"],
+      },
+    },
+  });
+  return log.getLogger(name);
 }

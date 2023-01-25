@@ -1,8 +1,10 @@
-import { caller, existsSync, match, P, path } from "./deps.ts";
+import { caller, existsSync, log, match, P, path } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 export type { GrowClient } from "./types.ts";
+
+export type Logger = log.Logger;
 
 export * from "./decorators.ts";
 
