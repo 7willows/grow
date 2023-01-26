@@ -1,4 +1,5 @@
 import { _, log, match, P, Reflect } from "./deps.ts";
+import { getLogger } from "./logger.ts";
 
 import type {
   Call,
@@ -58,7 +59,11 @@ async function assignLoggers() {
   const loggers = propsByMetadata("logger", plant);
 
   for (const key of loggers) {
-    plant[key] = growLogger(`${plantName}.init()`, "", "");
+    plant[key] = getLogger({
+      name: `${plantName}.init()`,
+      sessionId: "",
+      requestId: "",
+    });
   }
 }
 
@@ -125,11 +130,11 @@ async function callPlant(call: Call) {
   }
 
   const plant = await getPlant();
-  const logger = growLogger(
-    `${plantName}.${call.method}()`,
-    call.sessionId,
-    call.requestId,
-  );
+  const logger = getLogger({
+    name: `${plantName}.${call.method}()`,
+    sessionId: call.sessionId,
+    requestId: call.requestId,
+  });
 
   try {
     const wrappedPlant = wrapPlant(plant, {
@@ -299,32 +304,4 @@ async function callInit() {
   for (const fn of initFns) {
     await plant[fn]();
   }
-}
-
-function growLogger(name: string, sessionId?: string, requestId?: string) {
-  log.setup({
-    //define handlers
-    handlers: {
-      debug: new log.handlers.ConsoleHandler("DEBUG", {
-        formatter: function debugFormatter(rec: log.LogRecord) {
-          const base = `${rec.datetime.toISOString()} [${rec.levelName}] ` +
-            `[${name}] ${rec.msg} | sid:${sessionId} rid:${requestId}`;
-
-          let extra = rec.args.map((arg) => JSON.stringify(arg))
-            .join(" | ");
-
-          extra = extra ? " | " + extra : "";
-
-          return base + extra;
-        },
-      }),
-    },
-    loggers: {
-      [name]: {
-        level: "DEBUG",
-        handlers: ["debug"],
-      },
-    },
-  });
-  return log.getLogger(name);
 }

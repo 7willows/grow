@@ -112,19 +112,27 @@ function handleRequest(cfg: {
   return async (c: Context<any, any, any>) => {
     const args = await c.req.json() as any[];
 
-    const result = await cfg.callMethod({
-      plantName: cfg.plantName,
-      methodName: cfg.methodName,
-      args,
-      instances: cfg.instances,
-      sessionId: c.req.header("grow-session-id") ?? "",
-      requestId: c.req.header("grow-request-id") ?? "",
-    });
-
-    if ("error" in result) {
-      return c.json(result.error, 500);
+    let result;
+    try {
+      result = await cfg.callMethod({
+        plantName: cfg.plantName,
+        methodName: cfg.methodName,
+        args,
+        instances: cfg.instances,
+        sessionId: c.req.header("grow-session-id") ?? "",
+        requestId: c.req.header("grow-request-id") ?? "",
+      });
+    } catch (err) {
+      return c.json(err, 500);
     }
 
-    return c.json(result.result);
+    delete (result as any).receiver;
+    delete (result as any).callId;
+
+    if ("error" in result) {
+      return c.json(result, 500);
+    }
+
+    return c.json(result);
   };
 }

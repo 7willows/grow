@@ -31,8 +31,8 @@ class ZodError extends Error {
                 .filter(l => l !== listener);
         },
         dispatchEvent(event) {
-            const listeners = this.listeners[event.type] || [];
-            listeners.forEach(listener => listener(event));
+            const eventListeners = listeners[event.type] || [];
+            eventListeners.forEach(listener => listener(event));
         },
         set sessionId(sessionId) {
             if (sessionId === null || sessionId === undefined) {
@@ -40,7 +40,7 @@ class ZodError extends Error {
                     console.warn("sessionId can be a string or null but not undefined");
                 }
                 
-                localStorage.deleteItem("sessionId");
+                localStorage.removeItem("sessionId");
                 this.dispatchEvent(new CustomEvent('logout'));
             } else {
                 localStorage.setItem('sessionId', sessionId);
@@ -68,11 +68,20 @@ class ZodError extends Error {
             body: JSON.stringify(args)
         });
 
-        const json = await res.json();
+        const text = await res.text();
 
-        if (result.status === 401) {
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (err) {
+            console.log(err);
+            console.log(text);
+            throw new Error('invalid response from server');
+        }
+
+        if (res.status === 401) {
             window.grow.dispatchEvent(new CustomEvent('loginRequired'));
-        } else if (result.status === 403) {
+        } else if (res.status === 403) {
             window.grow.dispatchEvent(new CustomEvent('forbidden'));
         }
         
@@ -83,8 +92,8 @@ class ZodError extends Error {
                 throw new Error(json.error);
             }
         }
-        
-        return json;
+
+        return json.result;
     }
 
     function getRandomString() {

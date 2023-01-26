@@ -1,10 +1,9 @@
 import { caller, existsSync, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
+export type { Logger } from "./logger.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 export type { GrowClient } from "./types.ts";
-
-export type Logger = log.Logger;
 
 export * from "./decorators.ts";
 
@@ -88,6 +87,10 @@ function ensureValidArgs(cfg: {
   const contracts = cfg.instances[cfg.plantName]?.contracts ?? [];
   let methodDef: any;
 
+  if (!cfg.instances[cfg.plantName]) {
+    throw new Error("Plant not found, plant: " + cfg.plantName);
+  }
+
   outer:
   for (const contract of contracts) {
     for (const [methodName, def] of Object.entries(contract.shape)) {
@@ -99,7 +102,7 @@ function ensureValidArgs(cfg: {
   }
 
   if (!methodDef) {
-    throw new Error("method not found");
+    throw new Error("method not found. method:" + cfg.methodName);
   }
 
   const argsDef = methodDef._def.args._def.items;
@@ -190,6 +193,11 @@ function openChannels(
     const channel = new MessageChannel();
     channels.set(plantName + "-" + serviceName, channel);
     portsMap[serviceName] = channel.port1;
+
+    if (!instances[serviceName]) {
+      console.error('invalid inject("' + serviceName + '") on ' + plantName);
+    }
+
     instances[serviceName].worker.postMessage({
       inject: {
         plantName,
