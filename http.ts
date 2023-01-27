@@ -58,6 +58,8 @@ async function serveClient(app: Hono) {
   pathSplit.push("client.js");
   url.pathname = pathSplit.join("/");
 
+  console.log("wwwwwwww", url);
+
   fetch(url)
     .then((res) => res.text())
     .then((text) => {
