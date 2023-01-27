@@ -53,8 +53,8 @@ async function serveClient(app: Hono) {
   let client = "";
 
   fetch(
-    "file://" +
-      path.join(new URL(".", import.meta.url).pathname, "./client.js"),
+    // "file://" +
+    path.join(new URL(".", import.meta.url).pathname, "./client.js"),
   )
     .then((res) => res.text())
     .then((text) => {
