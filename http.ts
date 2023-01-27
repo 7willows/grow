@@ -52,8 +52,9 @@ export function startHttpServer(
 async function serveClient(app: Hono) {
   let client = "";
 
-  const clientReq = fetch(
-    path.join(new URL(".", import.meta.url).pathname, "./client.js"),
+  fetch(
+    "file://" +
+      path.join(new URL(".", import.meta.url).pathname, "./client.js"),
   )
     .then((res) => res.text())
     .then((text) => {
