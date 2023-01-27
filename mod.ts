@@ -7,7 +7,7 @@ export type { GrowClient } from "./types.ts";
 
 export * from "./decorators.ts";
 
-const calls = new Map<string, Deferred<any>>();
+let calls = new Map<string, Deferred<any>>();
 
 export type Crops = Awaited<ReturnType<typeof grow>>;
 
@@ -76,6 +76,7 @@ function stop(field: Field, instances: Record<string, Service>) {
     const service = instances[plantName];
     service.worker.terminate();
   }
+  calls = new Map();
 }
 
 function ensureValidArgs(cfg: {
@@ -242,9 +243,7 @@ function instantiateWorkers(dir: string, field: Field) {
 
     const worker = new Worker(
       new URL(`./worker.ts?${queryString}`, import.meta.url),
-      {
-        type: "module",
-      },
+      { type: "module" },
     );
 
     instances[plantName] = {

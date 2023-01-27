@@ -13,6 +13,9 @@ export const IManager = z.object({
   listItems: z.function()
     .args(z.string())
     .returns(Item.array().promise()),
+
+  throwErr: z.function()
+    .returns(z.void().promise()),
 });
 export type IManager = z.infer<typeof IManager>;
 

@@ -195,12 +195,10 @@ function wrapPlant<T extends Record<string, unknown>>(
   for (const key of injected) {
     const inj = Object.create((plant as any)[key]);
 
-    Object.defineProperty(inj[IDENTITY], "###GROW", {
-      value: {
-        sessionId: cfg.sessionId,
-        requestId: cfg.requestId,
-      },
-    });
+    inj[IDENTITY]["###GROW"] = {
+      sessionId: cfg.sessionId,
+      requestId: cfg.requestId,
+    };
 
     wrapped[key] = inj;
   }

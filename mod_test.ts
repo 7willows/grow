@@ -1,31 +1,9 @@
-import { assertEquals } from "./deps.ts";
+import { assertEquals, assertRejects } from "./deps.ts";
 import { grow } from "./mod.ts";
 import { IAccess, IManager } from "./examples/simple/contract.ts";
 
-Deno.test("basic field", async () => {
-  const crops = await startGrow();
-  const result = await crops.plant<IManager>("Manager").listItems("ok");
-
-  assertEquals(result.length, 2);
-
-  crops.kill();
-});
-
-Deno.test("sessionId", async () => {
-  const crops = await startGrow();
-
-  try {
-    const result = await crops.plant<IManager>("Manager", "ABC").getSession();
-    assertEquals(result, "ABC");
-  } catch (err) {
-    console.error(err);
-  } finally {
-    crops.kill();
-  }
-});
-
-function startGrow() {
-  return grow({
+async function startGrow() {
+  return await grow({
     plants: {
       Manager: {
         contracts: [IManager],
@@ -41,3 +19,25 @@ function startGrow() {
     },
   });
 }
+
+Deno.test("grow", async (t) => {
+  const crops = await startGrow();
+
+  await t.step("basic load data", async () => {
+    const result = await crops.plant<IManager>("Manager").listItems("ok");
+    assertEquals(result.length, 2);
+  });
+
+  await t.step("sessionId", async () => {
+    const result = await crops.plant<IManager>("Manager", "ABC").getSession();
+    assertEquals(result, "ABC");
+  });
+
+  await t.step("exception is not crushing the program", async () => {
+    await assertRejects(() => crops.plant<IManager>("Manager").throwErr());
+    const result = await crops.plant<IManager>("Manager", "ABC").getSession();
+    assertEquals(result, "ABC");
+  });
+
+  crops.kill();
+});

@@ -18,4 +18,9 @@ export class Manager implements IManager {
       item2,
     ];
   }
+
+  public async throwErr(): Promise<void> {
+    throw new Error("test error");
+    return Promise.resolve();
+  }
 }
