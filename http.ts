@@ -58,7 +58,16 @@ async function serveClient(app: Hono) {
   pathSplit.push("client.js");
   url.pathname = pathSplit.join("/");
 
-  fetch(url)
+  const authToken = (Deno.env.get("DENO_AUTH_TOKENS") ?? "")
+    .split(";")
+    .map((pair) => pair.split("@"))
+    .find(([token, url]) => url === "gitea.7willows.com")?.[0];
+
+  fetch(url, {
+    headers: {
+      Authorization: `token ${authToken}`,
+    },
+  })
     .then((res) => res.text())
     .then((text) => {
       client = text;
