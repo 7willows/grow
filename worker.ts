@@ -85,7 +85,7 @@ function getPlant() {
     return plantPromise;
   }
 
-  plantPromise = import(servicePath)
+  plantPromise = import("file://" + servicePath)
     .then((mod) => new mod[plantName]())
     .catch((err) => {
       console.error(`importing service ${servicePath} failed`, err);
