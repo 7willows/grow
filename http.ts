@@ -49,10 +49,18 @@ export function startHttpServer(
   serve(app.fetch as any);
 }
 
-function serveClient(app: Hono) {
-  const client = Deno.readTextFileSync(
+async function serveClient(app: Hono) {
+  let client = "";
+
+  const clientReq = fetch(
     path.join(new URL(".", import.meta.url).pathname, "./client.js"),
-  );
+  )
+    .then((res) => res.text())
+    .then((text) => {
+      client = text;
+    });
+  // path.join(new URL(".", import.meta.url).pathname, "./client.js"),
+  // );
 
   app.get("/grow.js", (c) => {
     c.header("content-type", "application/javascript");
