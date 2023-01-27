@@ -58,15 +58,11 @@ async function serveClient(app: Hono) {
   pathSplit.push("client.js");
   url.pathname = pathSplit.join("/");
 
-  console.log("wwwwwwww", url);
-
   fetch(url)
     .then((res) => res.text())
     .then((text) => {
       client = text;
     });
-  // path.join(new URL(".", import.meta.url).pathname, "./client.js"),
-  // );
 
   app.get("/grow.js", (c) => {
     c.header("content-type", "application/javascript");
