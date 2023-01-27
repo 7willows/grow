@@ -136,13 +136,13 @@ async function callPlant(call: Call) {
     requestId: call.requestId,
   });
 
-  try {
-    const wrappedPlant = wrapPlant(plant, {
-      sessionId: call.sessionId,
-      logger,
-      requestId: call.requestId,
-    });
+  const wrappedPlant = wrapPlant(plant, {
+    sessionId: call.sessionId,
+    logger,
+    requestId: call.requestId,
+  });
 
+  try {
     logger.debug("started");
     const result = await wrappedPlant[call.method](...call.args);
     logger.debug("success");
