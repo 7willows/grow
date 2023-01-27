@@ -52,10 +52,13 @@ export function startHttpServer(
 async function serveClient(app: Hono) {
   let client = "";
 
-  fetch(
-    "file://" +
-      path.join(new URL(".", import.meta.url).pathname, "./client.js"),
-  )
+  const url = new URL(import.meta.url);
+  const pathSplit = url.pathname.split("/");
+  pathSplit.pop();
+  pathSplit.push("client.js");
+  url.pathname = pathSplit.join("/");
+
+  fetch(url)
     .then((res) => res.text())
     .then((text) => {
       client = text;
