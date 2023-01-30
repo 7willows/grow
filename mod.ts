@@ -200,7 +200,6 @@ function serviceCommunication(
   service.worker.onmessage = (event) => {
     match<MsgFromWorker, void>(event.data)
       .with({ ready: P.select() }, ({ toInject }) => {
-        deps = toInject;
         const portsMap = openChannels(service.plantName, toInject, instances);
 
         service.worker.postMessage({
