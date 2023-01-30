@@ -4,9 +4,9 @@ export type Deferred<T> = {
   reject: (reason: any) => void;
 };
 
-export function defer() {
+export function defer<T>(): Deferred<T> {
   let resolve: any, reject: any;
-  const promise = new Promise((res, rej) => {
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
     reject = rej;
   });

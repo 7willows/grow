@@ -1,13 +1,23 @@
 import { caller, existsSync, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
-import { CallMethod, Field, MsgFromWorker, Service } from "./types.ts";
+import {
+  CallMethod,
+  Field,
+  MsgFromWorker,
+  PlantDef,
+  Service,
+} from "./types.ts";
+import { getLogger } from "./logger.ts";
 export type { Logger } from "./logger.ts";
+
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 export type { GrowClient } from "./types.ts";
 
 export * from "./decorators.ts";
 
 let calls = new Map<string, Deferred<any>>();
+
+const logger = getLogger({ name: "grow", sessionId: "", requestId: "" });
 
 export type Crops = Awaited<ReturnType<typeof grow>>;
 
@@ -22,20 +32,23 @@ export async function grow(field: Field) {
 
   const instances = instantiateWorkers(servicesDir, field);
 
-  await Promise.all(
-    Object.keys(instances).map((plantName) => {
-      return serviceCommunication(
-        plantName,
-        instances,
-        initializedIndicator,
-      );
-    }),
-  );
+  Object.keys(instances).map((plantName) => {
+    return serviceCommunication(
+      plantName,
+      instances,
+      initializedIndicator,
+    );
+  });
 
-  await Promise.all(
-    Array.from(initializedIndicator.values())
-      .map((v) => v.promise),
-  );
+  const promises = Array
+    .from(initializedIndicator.values())
+    .map((d) => d.promise);
+
+  await Promise.all(promises);
+
+  for (const [, service] of Object.entries(instances)) {
+    handleCrashes(service, servicesDir, instances);
+  }
 
   if (isHttpEnabled(field)) {
     startHttpServer(field, instances, callMethod);
@@ -69,6 +82,43 @@ export async function grow(field: Field) {
       }) as T;
     },
   };
+}
+
+function handleCrashes(
+  service: Service,
+  dir: string,
+  instances: Record<string, Service>,
+) {
+  service.worker.addEventListener("error", (event) => {
+    logger.error(
+      `Worker "${service?.plantName}" crashed: ${event.message}, restarting`,
+    );
+    event.stopPropagation();
+    event.preventDefault();
+
+    service.worker.terminate();
+
+    const newService = instantiateWorker(
+      service.plantDef,
+      service.plantName,
+      dir,
+    );
+    instances[service.plantName] = newService;
+
+    const initializedIndicator = new Map<string, Deferred<any>>();
+    initializedIndicator.set(service.plantName, defer());
+
+    channels.forEach((_ch, chName) => {
+      if (chName[0] !== service.plantName && chName[1] !== service.plantName) {
+        return;
+      }
+
+      channels.delete(chName);
+    });
+
+    serviceCommunication(service.plantName, instances, initializedIndicator);
+    handleCrashes(newService, dir, instances);
+  });
 }
 
 function stop(field: Field, instances: Record<string, Service>) {
@@ -150,6 +200,7 @@ function serviceCommunication(
   service.worker.onmessage = (event) => {
     match<MsgFromWorker, void>(event.data)
       .with({ ready: P.select() }, ({ toInject }) => {
+        deps = toInject;
         const portsMap = openChannels(service.plantName, toInject, instances);
 
         service.worker.postMessage({
@@ -160,6 +211,7 @@ function serviceCommunication(
         }, Object.values(portsMap));
       })
       .with({ initialized: true }, () => {
+        logger.info("INITIALIZED: " + plantName);
         initializedIndicator.get(plantName)?.resolve(true);
       })
       .with({ callResult: P.select() }, (result) => {
@@ -174,7 +226,7 @@ function serviceCommunication(
   };
 }
 
-const channels = new Map<string, MessageChannel>();
+const channels = new Map<string[], MessageChannel>();
 
 function openChannels(
   plantName: string,
@@ -185,18 +237,18 @@ function openChannels(
 
   for (const serviceName of toInject) {
     if (
-      channels.has(serviceName + "-" + plantName) ||
-      channels.has(plantName + "-" + serviceName)
+      channels.has([serviceName, plantName]) ||
+      channels.has([plantName, serviceName])
     ) {
       continue;
     }
 
     const channel = new MessageChannel();
-    channels.set(plantName + "-" + serviceName, channel);
+    channels.set([plantName, serviceName], channel);
     portsMap[serviceName] = channel.port1;
 
     if (!instances[serviceName]) {
-      console.error('invalid inject("' + serviceName + '") on ' + plantName);
+      logger.error(`invalid inject("${serviceName}) on ${plantName}`);
     }
 
     instances[serviceName].worker.postMessage({
@@ -235,24 +287,28 @@ function instantiateWorkers(dir: string, field: Field) {
   const instances: Record<string, Service> = {};
 
   for (const [plantName, plantDef] of Object.entries(field.plants)) {
-    const servicePath = plantDef.filePath
-      ? path.join(dir, plantDef.filePath)
-      : determineServicePath(dir, plantName);
-
-    const queryString = `plantName=${plantName}&servicePath=${servicePath}`;
-
-    const worker = new Worker(
-      new URL(`./worker.ts?${queryString}`, import.meta.url),
-      { type: "module" },
-    );
-
-    instances[plantName] = {
-      worker,
-      plantDef,
-      plantName,
-      contracts: plantDef.contracts,
-    };
+    instances[plantName] = instantiateWorker(plantDef, plantName, dir);
   }
 
   return instances;
+}
+
+function instantiateWorker(plantDef: PlantDef, plantName: string, dir: string) {
+  const servicePath = plantDef.filePath
+    ? path.join(dir, plantDef.filePath)
+    : determineServicePath(dir, plantName);
+
+  const queryString = `plantName=${plantName}&servicePath=${servicePath}`;
+
+  const worker = new Worker(
+    new URL(`./worker.ts?${queryString}`, import.meta.url),
+    { type: "module" },
+  );
+
+  return {
+    worker,
+    plantDef,
+    plantName,
+    contracts: plantDef.contracts,
+  };
 }
