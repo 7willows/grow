@@ -11,6 +11,14 @@ export function getLogger(cfg: {
   fields?: Record<string, any>;
 }) {
   const logLevel = (Deno.env.get("GROW_LOG_LEVEL") ?? "DEBUG") as any;
+  const isPretty = Deno.env.get("GROW_LOG_PRETTY") === "true";
+
+  function toJson(obj: any) {
+    if (isPretty) {
+      return JSON.stringify(obj, null, 2);
+    }
+    return JSON.stringify(obj);
+  }
 
   log.setup({
     //define handlers
@@ -20,10 +28,10 @@ export function getLogger(cfg: {
           const base = `${rec.datetime.toISOString()} [${rec.levelName}] ` +
             `[${cfg.name}] ${rec.msg} | sid:${cfg.sessionId} rid:${cfg.requestId}`;
 
-          const extra = rec.args.map((arg) => JSON.stringify(arg));
+          const extra = rec.args.map((arg) => toJson(arg));
 
           if (cfg.fields) {
-            extra.push(JSON.stringify(cfg.fields));
+            extra.push(toJson(cfg.fields));
           }
 
           const rest = extra ? " | " + extra.join(" | ") : "";
