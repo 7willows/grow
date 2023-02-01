@@ -18,16 +18,6 @@ export function startHttpServer(
   serveClient(app);
 
   app.onError((err, c) => {
-    const status = match<[string, string], StatusCode>([err.message, err.name])
-      .with(["notFound", P._], () => 404)
-      .with(["unauthorized", P._], () => 401)
-      .with(["forbidden", P._], () => 403)
-      .with(["badRequest", P._], () => 400)
-      .with(["validationError", P._], () => 400)
-      .with(["conflict", P._], () => 409)
-      .with([P._, "ZodError"], () => 400)
-      .otherwise(() => 500);
-
     return c.json(err, status);
   });
 
@@ -133,16 +123,29 @@ function handleRequest(cfg: {
         requestId: c.req.header("grow-request-id") ?? "",
       });
     } catch (err) {
-      return c.json(err, 500);
+      return c.json(err, errorToStatus(err));
     }
 
     delete (result as any).receiver;
     delete (result as any).callId;
 
-    if ("error" in result) {
-      return c.json(result, 500);
+    if (result?.type === "error") {
+      const status = errorToStatus(result as any);
+      return c.json(result, status);
     }
 
     return c.json(result);
   };
+}
+
+function errorToStatus(err: { message: string; name: string }) {
+  return match<[string, string], StatusCode>([err.message, err.name])
+    .with(["notFound", P._], () => 404)
+    .with(["unauthorized", P._], () => 401)
+    .with(["forbidden", P._], () => 403)
+    .with(["badRequest", P._], () => 400)
+    .with(["validationError", P._], () => 400)
+    .with(["conflict", P._], () => 409)
+    .with([P._, "ZodError"], () => 400)
+    .otherwise(() => 500);
 }

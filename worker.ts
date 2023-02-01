@@ -167,8 +167,9 @@ async function callPlant(call: Call) {
         callId: call.callId,
         receiver: call.caller,
         type: "error",
-        error: (err as any)?.message ??
-          `calling ${plantName}.${call.method}() failed`,
+        name: err.name,
+        message: err.message,
+        ...err,
       },
     });
   }

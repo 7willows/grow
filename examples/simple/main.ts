@@ -30,5 +30,3 @@ const crops = await grow({
     });
   },
 });
-
-
