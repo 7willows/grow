@@ -23,6 +23,7 @@ export function startHttpServer(
       .with(["unauthorized", P._], () => 401)
       .with(["forbidden", P._], () => 403)
       .with(["badRequest", P._], () => 400)
+      .with(["validationError", P._], () => 400)
       .with(["conflict", P._], () => 409)
       .with([P._, "ZodError"], () => 400)
       .otherwise(() => 500);
