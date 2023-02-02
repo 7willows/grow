@@ -26,7 +26,13 @@ export type Service = {
 
 export type CallResult =
   | { type: "success"; result: any; receiver: string; callId: string }
-  | { type: "error"; error: string; receiver: string; callId: string };
+  | {
+    type: "error";
+    receiver: string;
+    callId: string;
+    name: string;
+    message: string;
+  };
 
 export type Call = {
   sessionId: string;

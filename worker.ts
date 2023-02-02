@@ -121,7 +121,7 @@ function manageResult(result: CallResult) {
     .with({ type: "success", result: P.select() }, (result) => {
       deferred.resolve(result);
     })
-    .with({ type: "error", error: P.select() }, (error) => {
+    .with({ type: "error", message: P.select() }, (error) => {
       deferred.reject(error);
     })
     .exhaustive();

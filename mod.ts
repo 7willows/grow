@@ -72,8 +72,9 @@ export async function grow(field: Field) {
               instances,
             });
 
-            if ("error" in r) {
-              throw new Error(r.error);
+            if (r.type === "error") {
+              const err = Object.assign(new Error(r.message), r);
+              throw err;
             }
 
             return r.result;

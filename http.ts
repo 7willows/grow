@@ -18,7 +18,7 @@ export function startHttpServer(
   serveClient(app);
 
   app.onError((err, c) => {
-    return c.json(err, status);
+    return c.json(err, errorToStatus(err));
   });
 
   setTimeout(() => {
