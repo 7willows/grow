@@ -1,0 +1,7 @@
+POST http://localhost:8000/content-manager/add-documents HTTP/1.1
+Cookie: AuthSession=YWRtaW4yOjYzRDc5OTY5Opf_3qSeoDuDH-NXwx-LY6Qh8FCN
+content-type: application/json
+grow-request-id: ldoby68bgy5nnkoisl
+grow-session-id: nB0wvONlUoNkJPyGo47aIYEeGw5+r4Z7duigMfrxYLeXNjEK+z18hBL1MYCjFxqx
+
+["product", [{"name": "asdfa"}]]
