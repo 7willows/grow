@@ -89,7 +89,8 @@ class ZodError extends Error {
       if (json.name === "ZodError") {
         throw new ZodError(json.issues);
       } else {
-        throw new Error(json.error);
+        const err = Object.assign(new Error(json.message), json);
+        throw err;
       }
     }
 
