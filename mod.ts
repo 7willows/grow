@@ -22,17 +22,31 @@ const logger = getLogger({ name: "grow", sessionId: "", requestId: "" });
 export type Crops = Awaited<ReturnType<typeof grow>>;
 
 function caller() {
-    const err = new Error();
-    let stack = err.stack?.split('\n')[3];
-    stack = stack.substr(stack.indexOf('at ') + 3);
-    const path = stack.split(':');
-    return path.slice(0, -2).join(':');
+  const err = new Error();
+  let stack = err.stack?.split("\n")[3] ?? "";
+  stack = stack.substr(stack.indexOf("at ") + 3);
+  const path = stack.split(":");
+  return path.slice(0, -2).join(":");
+}
+
+function dirExists(dir: string): boolean {
+  try {
+    Deno.statSync(dir);
+    return true;
+  } catch (_err) {
+    return false;
+  }
 }
 
 export async function grow(field: Field) {
-    field = Field.parse(field);
-    const callerPath = path.dirname(caller() ?? "");
-    const servicesDir = callerPath.split("file:///")[1] ?? (callerPath.split("file://")[1] ?? "");
+  field = Field.parse(field);
+  const callerPath = path.dirname(caller() ?? "");
+  let servicesDir = callerPath.split("file:///")[1] ?? "";
+
+  if (!dirExists(servicesDir)) {
+    servicesDir = "/" + servicesDir;
+  }
+
   const initializedIndicator = new Map<string, Deferred<any>>();
 
   for (const plantName of Object.keys(field.plants)) {
