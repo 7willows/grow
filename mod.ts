@@ -44,6 +44,8 @@ export async function grow(field: Field) {
   let servicesDir = callerPath.split("file:///")[1] ?? "";
 
   if (!dirExists(servicesDir)) {
+    // linux and windows treat paths differently.
+    // to support two systems we need this workaround
     servicesDir = "/" + servicesDir;
   }
 
