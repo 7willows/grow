@@ -1,4 +1,4 @@
-import { caller, existsSync, log, match, P, path, z } from "./deps.ts";
+import { existsSync, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import {
   CallMethod,
@@ -21,9 +21,18 @@ const logger = getLogger({ name: "grow", sessionId: "", requestId: "" });
 
 export type Crops = Awaited<ReturnType<typeof grow>>;
 
+function caller() {
+    const err = new Error();
+    let stack = err.stack?.split('\n')[3];
+    stack = stack.substr(stack.indexOf('at ') + 3);
+    const path = stack.split(':');
+    return path.slice(0, -2).join(':');
+}
+
 export async function grow(field: Field) {
-  field = Field.parse(field);
-  const servicesDir = path.dirname(caller() ?? "").split("file://")[1] ?? "";
+    field = Field.parse(field);
+    const callerPath = path.dirname(caller() ?? "");
+    const servicesDir = callerPath.split("file:///")[1] ?? (callerPath.split("file://")[1] ?? "");
   const initializedIndicator = new Map<string, Deferred<any>>();
 
   for (const plantName of Object.keys(field.plants)) {

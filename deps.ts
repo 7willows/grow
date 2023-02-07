@@ -14,5 +14,3 @@ export {
 } from "https://deno.land/std@0.173.0/testing/asserts.ts";
 export * as log from "https://deno.land/std@0.173.0/log/mod.ts";
 
-import caller from "https://deno.land/x/caller@0.1.4/caller.ts";
-export { caller };
