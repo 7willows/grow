@@ -4,6 +4,7 @@
 
 - `GROW_LOG_LEVEL` - specify log level (see log levels: https://deno.land/std@0.175.0/log/levels.ts?s=LogLevels)
 - `GROW_LOG_PRETTY` - if "true" then logs will be pretty
+- `GROW_PORT` - port for http
 
 ## TODO
 
