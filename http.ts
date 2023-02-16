@@ -38,14 +38,17 @@ export function startHttpServer(
   serve(app.fetch as any, { port });
 }
 
-async function tryFetch(attempts: number, url: any, options: any) {
-  console.log("Trying", attempts, "more times");
+async function tryFetch(
+  attempts: number,
+  url: any,
+  options: any,
+): Promise<any> {
   try {
-    return fetch(url, options);
-  } catch (e) {
+    return await fetch(url, options);
+  } catch (err) {
     if (attempts > 0) {
-      return tryFetch(attempts - 1, url, options);
-    } else throw e;
+      return await tryFetch(attempts - 1, url, options);
+    } else throw err;
   }
 }
 
