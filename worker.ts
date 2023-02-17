@@ -297,6 +297,9 @@ async function updateConfig(config: any) {
     const configPath = Reflect.getMetadata("config", plant, key);
     if (configPath) {
       plant[key] = _.get(config, configPath, undefined);
+      if (plant[key] === undefined) {
+        throw new Error("Config not found for " + configPath);
+      }
     }
   }
 }
