@@ -63,7 +63,7 @@ class ZodError extends Error {
       headers: {
         "content-type": "application/json",
         "grow-request-id": requestId,
-        "grow-session-id": window.grow.sessionId,
+        "grow-session-id": window.grow.sessionId || "",
       },
       body: JSON.stringify(args),
     });
