@@ -92,6 +92,9 @@ function routes(cfg: {
     const plantNameDashCase = toDashCase(plantName);
 
     for (const contract of plantDef.contracts) {
+      if (!plantDef.http) {
+        continue;
+      }
       for (const [methodName] of Object.entries(contract.shape)) {
         const methodDashCase = toDashCase(methodName);
 
