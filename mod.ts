@@ -8,6 +8,7 @@ import {
   Service,
 } from "./types.ts";
 import { getLogger } from "./logger.ts";
+export { getLogger } from "./logger.ts";
 export type { Logger } from "./logger.ts";
 
 import { isHttpEnabled, startHttpServer } from "./http.ts";
