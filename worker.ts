@@ -298,7 +298,7 @@ async function updateConfig(config: any) {
     if (configPath) {
       plant[key] = _.get(config, configPath, undefined);
       if (plant[key] === undefined) {
-        throw new Error("Config not found for " + configPath);
+        throw new Error(plantName + ": Config not found for " + configPath);
       }
     }
   }
