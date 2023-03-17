@@ -34,6 +34,7 @@ class ZodError extends Error {
       const eventListeners = listeners[event.type] || [];
       eventListeners.forEach((listener) => listener(event));
     },
+    urlPrefix: "",
     set sessionId(sessionId) {
       if (sessionId === null || sessionId === undefined) {
         if (sessionId === undefined) {
@@ -56,7 +57,11 @@ class ZodError extends Error {
     const requestId = getRandomString();
     const plantNameDash = toDashCase(plantName);
     const methodNameDash = toDashCase(methodName);
-    const url = `/${plantNameDash}/${methodNameDash}`;
+    let url = `/${plantNameDash}/${methodNameDash}`;
+
+    if (grow.urlPrefix) {
+      url = `${grow.urlPrefix}${url}`;
+    }
 
     const res = await fetch(url, {
       method: "POST",
