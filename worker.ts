@@ -121,8 +121,14 @@ function manageResult(result: CallResult) {
     .with({ type: "success", result: P.select() }, (result) => {
       deferred.resolve(result);
     })
-    .with({ type: "error", message: P.select() }, (error) => {
-      deferred.reject(error);
+    .with({ type: "error" }, (error) => {
+      const err = new Error(error.message);
+      Object.assign(err, _.omit(error, "type", "callId", "receiver"));
+      Object.defineProperty(err, "message", {
+        value: error.message,
+        enumerable: true,
+      });
+      deferred.reject(err);
     })
     .exhaustive();
 }
