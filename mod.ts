@@ -73,7 +73,7 @@ export async function grow(field: Field) {
   await Promise.all(promises);
 
   for (const [, service] of Object.entries(instances)) {
-    handleCrashes(service, servicesDir, instances);
+    handleErrors(service, servicesDir, instances);
   }
 
   if (isHttpEnabled(field)) {
@@ -111,40 +111,17 @@ export async function grow(field: Field) {
   };
 }
 
-function handleCrashes(
+function handleErrors(
   service: Service,
   dir: string,
   instances: Record<string, Service>,
 ) {
   service.worker.addEventListener("error", (event) => {
     logger.error(
-      `Worker "${service?.plantName}" crashed: ${event.message}, restarting`,
+      `Error in worker "${service?.plantName}" Reason: ${event.message}`,
     );
     event.stopPropagation();
     event.preventDefault();
-
-    service.worker.terminate();
-
-    const newService = instantiateWorker(
-      service.plantDef,
-      service.plantName,
-      dir,
-    );
-    instances[service.plantName] = newService;
-
-    const initializedIndicator = new Map<string, Deferred<any>>();
-    initializedIndicator.set(service.plantName, defer());
-
-    channels.forEach((_ch, chName) => {
-      if (chName[0] !== service.plantName && chName[1] !== service.plantName) {
-        return;
-      }
-
-      channels.delete(chName);
-    });
-
-    serviceCommunication(service.plantName, instances, initializedIndicator);
-    handleCrashes(newService, dir, instances);
   });
 }
 
