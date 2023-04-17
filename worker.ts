@@ -300,7 +300,12 @@ async function updateConfig(config: any) {
   const plant = await getPlant();
 
   for (const key of Object.keys(plant)) {
-    const configPath = Reflect.getMetadata("config", plant, key);
+    let configPath = Reflect.getMetadata("config", plant, key);
+
+    if (configPath === "###DEDUCE") {
+      configPath = key[0].toUpperCase() + key.slice(1);
+    }
+
     if (configPath) {
       plant[key] = _.get(config, configPath, undefined);
       if (plant[key] === undefined) {

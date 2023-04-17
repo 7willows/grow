@@ -1,7 +1,7 @@
 import { Reflect } from "./deps.ts";
 
 export function config(cfgPath?: string): PropertyDecorator {
-  return Reflect.metadata("config", cfgPath);
+  return Reflect.metadata("config", cfgPath || "###DEDUCE");
 }
 
 export function inject(serviceName?: string): PropertyDecorator {
