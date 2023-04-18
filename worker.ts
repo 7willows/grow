@@ -303,7 +303,7 @@ async function updateConfig(config: any) {
     let configPath = Reflect.getMetadata("config", plant, key);
 
     if (configPath === "###DEDUCE") {
-      configPath = key[0].toUpperCase() + key.slice(1);
+      configPath = key;
     }
 
     if (configPath) {
