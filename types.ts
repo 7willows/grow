@@ -5,6 +5,7 @@ export const PlantDef = z.object({
   config: z.record(z.any()).optional(),
   http: z.boolean().optional(),
   filePath: z.string().optional(),
+  proc: z.string().optional(),
 });
 export type PlantDef = z.infer<typeof PlantDef>;
 
@@ -17,8 +18,23 @@ export const Field = z.object({
 });
 export type Field = z.infer<typeof Field>;
 
-export type Service = {
+export type ValidField = {
+  plants: Record<string, Required<PlantDef>>;
+  http?: HttpFunction;
+};
+
+export type Proc = {
   worker: Worker;
+  procName: string;
+  plants: {
+    plantName: string;
+    plantDef: PlantDef;
+  }[];
+  procsPorts: Map<string, MessagePort>;
+};
+
+export type Service = {
+  proc: Proc;
   plantDef: PlantDef;
   plantName: string;
   contracts: z.ZodObject<any>[];
@@ -45,20 +61,27 @@ export type Call = {
 };
 
 export type MsgToWorker =
-  | { configUpdate: any }
-  | { init: { config: any; toInject: string[] } }
-  | { inject: { plantName: string } }
+  | {
+    init: {
+      field: ValidField;
+      proc: string;
+      portNames: string[];
+      config: {
+        [plantName: string]: any;
+      };
+    };
+  }
   | { call: Call }
   | { callResult: CallResult };
 
 export type MsgFromWorker =
-  | { ready: { toInject: string[] } }
-  | { initialized: true }
+  | { ready: true }
+  | { initComplete: true }
   | { callResult: CallResult };
 
 export type WorkerToWorkerMsg =
-  | { call: Call }
-  | { callResult: CallResult };
+  | { call: Call; receiverPlant: string }
+  | { callResult: CallResult; receiverPlant: string };
 
 type CallMethodCfg = {
   sessionId: string;
@@ -66,7 +89,7 @@ type CallMethodCfg = {
   plantName: string;
   methodName: string;
   args: any[];
-  instances: Record<string, Service>;
+  procs: Map<string, Proc>;
 };
 
 export type CallMethod = (cfg: CallMethodCfg) => Promise<CallResult>;

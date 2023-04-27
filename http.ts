@@ -1,5 +1,5 @@
 import { Context, Hono, match, P, serve, StatusCode, z } from "./deps.ts";
-import { CallMethod, Field, Service } from "./types.ts";
+import { CallMethod, Field, Proc, Service } from "./types.ts";
 
 export function isHttpEnabled(field: Field) {
   return (
@@ -9,12 +9,12 @@ export function isHttpEnabled(field: Field) {
 
 export function startHttpServer(
   field: Field,
-  instances: Record<string, Service>,
+  procs: Map<string, Proc>,
   callMethod: CallMethod,
 ) {
   const app = new Hono();
 
-  routes({ app, field, instances, callMethod });
+  routes({ app, field, procs, callMethod });
 
   serveClient(app);
 
@@ -85,7 +85,7 @@ async function serveClient(app: Hono) {
 function routes(cfg: {
   app: Hono;
   field: Field;
-  instances: Record<string, Service>;
+  procs: Map<string, Proc>;
   callMethod: CallMethod;
 }) {
   for (const [plantName, plantDef] of Object.entries(cfg.field.plants)) {
@@ -105,7 +105,7 @@ function routes(cfg: {
           handleRequest({
             plantName,
             methodName,
-            instances: cfg.instances,
+            procs: cfg.procs,
             callMethod: cfg.callMethod,
           }),
         );
@@ -131,7 +131,7 @@ function toDashCase(text: string) {
 function handleRequest(cfg: {
   plantName: string;
   methodName: string;
-  instances: Record<string, Service>;
+  procs: Map<string, Proc>;
   callMethod: CallMethod;
 }) {
   return async (c: Context<any, any, any>) => {
@@ -143,7 +143,7 @@ function handleRequest(cfg: {
         plantName: cfg.plantName,
         methodName: cfg.methodName,
         args,
-        instances: cfg.instances,
+        procs: cfg.procs,
         sessionId: c.req.header("grow-session-id") ?? "",
         requestId: c.req.header("grow-request-id") ?? "",
       });

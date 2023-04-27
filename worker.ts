@@ -4,46 +4,49 @@ import { getLogger } from "./logger.ts";
 import type {
   Call,
   CallResult,
+  MsgFromWorker,
   MsgToWorker,
+  ValidField,
   WorkerToWorkerMsg,
 } from "./types.ts";
 import { defer, Deferred } from "./defer.ts";
 
 const url = new URL(import.meta.url);
-const plantName = url.searchParams.get("plantName") ?? "";
-const servicePath = url.searchParams.get("servicePath") ?? "";
+const proc = url.searchParams.get("proc") ?? "";
+// const plantName = url.searchParams.get("plantName") ?? "";
+// const servicePath = url.searchParams.get("servicePath") ?? "";
 
 const IDENTITY = Symbol("proxy_target_identity");
-if (!plantName || !servicePath) {
-  throw new Error("Missing plantName or servicePath");
-}
+// if (!plantName || !servicePath) {
+//   throw new Error("Missing plantName or servicePath");
+// }
 
 let plantPromise: Promise<any>;
 const calls = new Map<string, Deferred<any>>();
 const ports = new Map<string, MessagePort>();
 const logger = getLogger({
-  name: `WORKER[${plantName}]`,
+  name: `WORKER[${proc}]`,
   sessionId: "",
   requestId: "",
 });
 
 ports.set("###MAIN", self as any);
 
+const plants = new Map<string, any>();
+
 self.onmessage = (event: MessageEvent) => {
   match(event.data as MsgToWorker)
-    .with({ init: P.select() }, async ({ config, toInject }) => {
-      await updateConfig(config);
-      assignLoggers();
-      toInject.forEach((injectedPlantName: string, index: number) => {
-        const port = event.ports[index];
-        listenOnPort(port);
-        ports.set(injectedPlantName, port);
+    .with({ init: P.select() }, async (initMsg) => {
+      const msg = event.data as MsgToWorker;
+      await init({
+        field: initMsg.field,
+        procName: initMsg.proc,
+        portNames: initMsg.portNames,
+        procPorts: event.ports,
+        config: initMsg.config,
       });
-      await callInit();
-      self.postMessage({ initialized: true });
-    })
-    .with({ configUpdate: P.select() }, (config) => {
-      updateConfig(config);
+
+      self.postMessage({ initComplete: true });
     })
     .with({ call: P.select() }, (call) => {
       callPlant(call);
@@ -51,25 +54,57 @@ self.onmessage = (event: MessageEvent) => {
     .with({ callResult: P.select() }, (result) => {
       manageResult(result);
     })
-    .with({ inject: P.select() }, ({ plantName }) => {
-      const port = event.ports[0];
-      listenOnPort(port);
-      ports.set(plantName, port);
-    })
     .exhaustive();
 };
 
-async function assignLoggers() {
-  const plant = await getPlant();
-  const loggers = propsByMetadata("logger", plant);
+async function init(cfg: {
+  field: ValidField;
+  procName: string;
+  portNames: string[];
+  procPorts: readonly MessagePort[];
+  config: {
+    [plantName: string]: any;
+  };
+}): Promise<void> {
+  for (const [plantName, plantDef] of Object.entries(cfg.field.plants)) {
+    const plantProcName = plantDef.proc ?? plantName;
+    if (plantProcName !== cfg.procName) {
+      continue;
+    }
 
-  for (const key of loggers) {
-    plant[key] = getLogger({
-      name: `${plantName}.init()`,
-      sessionId: "",
-      requestId: "",
-    });
+    const plant = await initPlant(plantName, plantDef.filePath);
+    plants.set(plantName, plant);
+
+    updateConfig(cfg.config);
+    //   assignLoggers();
+
+    //   msg.init.toInject.forEach((injectedPlantName: string, index: number) => {
+    //     const port = event.ports[index];
+    //     listenOnPort(port);
+    //     ports.set(injectedPlantName, port);
+    //   });
+    //   await callInit();
+
+    // inject
+    // set config
+    // set loogers
+    // call init
+    // post "initComplete" message
   }
+}
+
+function assignLoggers() {
+  plants.forEach((plant, plantName) => {
+    const loggers = propsByMetadata("logger", plant);
+
+    for (const key of loggers) {
+      plant[key] = getLogger({
+        name: `${plantName}.init()`,
+        sessionId: "",
+        requestId: "",
+      });
+    }
+  });
 }
 
 function listenOnPort(port: MessagePort) {
@@ -85,28 +120,20 @@ function listenOnPort(port: MessagePort) {
   };
 }
 
-function getPlant() {
-  if (plantPromise) {
-    return plantPromise;
+async function initPlant(plantName: string, plantPath: string): Promise<any> {
+  const mod = await import("file://" + plantPath).catch((err: any) => {
+    logger.error(`import of ${plantPath} failed`, err);
+    throw new Error("importFailed");
+  });
+  try {
+    return new mod[plantName]();
+  } catch (err) {
+    logger.error(`instantiation of ${plantName} failed`, err);
+    throw new Error("instantiationFailed");
   }
-
-  plantPromise = import("file://" + servicePath)
-    .then((mod) => new mod[plantName]())
-    .catch((err) => {
-      logger.error(`importing service ${servicePath} failed`, err);
-      throw err;
-    });
-
-  return plantPromise;
 }
 
-async function preInit() {
-  const plant = await getPlant();
-  const toInject = initInjectables(plant);
-  self.postMessage({ ready: { toInject } });
-}
-
-preInit();
+self.postMessage({ ready: true });
 
 function manageResult(result: CallResult) {
   const deferred = calls.get(result.callId);
@@ -140,23 +167,28 @@ async function callPlant(call: Call) {
     throw new Error(`No port for ${call.caller}`);
   }
 
-  const plant = await getPlant();
-  const logger = getLogger({
-    name: `${plantName}.${call.method}()`,
+  const plant = plants.get(call.receiver);
+
+  if (!plant) {
+    logger.error(`plant ${call.receiver} not found`);
+  }
+
+  const plantLogger = getLogger({
+    name: `${call.receiver}.${call.method}()`,
     sessionId: call.sessionId,
     requestId: call.requestId,
   });
 
   const wrappedPlant = wrapPlant(plant, {
     sessionId: call.sessionId,
-    logger,
+    logger: plantLogger,
     requestId: call.requestId,
   });
 
   try {
-    logger.debug("started");
+    plantLogger.debug("started");
     const result = await wrappedPlant[call.method](...call.args);
-    logger.debug("success");
+    plantLogger.debug("success");
 
     port.postMessage({
       callResult: {
@@ -167,7 +199,7 @@ async function callPlant(call: Call) {
       },
     });
   } catch (err) {
-    logger.error("failure", err);
+    plantLogger.error("failure", err);
     port.postMessage({
       callResult: {
         callId: call.callId,
@@ -235,7 +267,7 @@ function propsByMetadata(metadataKey: string, plant: any) {
   return props;
 }
 
-function initInjectables(plant: any) {
+function initInjectables(plantName: string, plant: any) {
   const toInject: string[] = [];
 
   for (const key of Object.keys(plant)) {
@@ -251,13 +283,13 @@ function initInjectables(plant: any) {
 
     toInject.push(meta);
 
-    plant[key] = buildProxy(meta);
+    plant[key] = buildProxy(plantName, meta);
   }
 
   return toInject;
 }
 
-function buildProxy(targetService: string) {
+function buildProxy(plantName: string, targetService: string) {
   return new Proxy({}, {
     get: (target, prop) => {
       if (prop === IDENTITY) {
@@ -296,30 +328,45 @@ function buildProxy(targetService: string) {
   });
 }
 
-async function updateConfig(config: any) {
-  const plant = await getPlant();
+function updateConfig(config: { [plantName: string]: any }) {
+  Object.keys(config).forEach((plantName) => {
+    const plant = plants.get(plantName);
 
-  for (const key of Object.keys(plant)) {
-    let configPath = Reflect.getMetadata("config", plant, key);
-
-    if (configPath === "###DEDUCE") {
-      configPath = key;
+    if (!plant) {
+      logger.error(`plant ${plantName} not found`);
+      throw new Error("plantNotFound");
     }
 
-    if (configPath) {
-      plant[key] = _.get(config, configPath, undefined);
-      if (plant[key] === undefined) {
-        throw new Error(plantName + ": Config not found for " + configPath);
+    for (const key of Object.keys(plant)) {
+      let configPath = Reflect.getMetadata("config", plant, key);
+
+      if (configPath === "###DEDUCE") {
+        configPath = key;
+      }
+
+      if (configPath) {
+        plant[key] = _.get(config[plantName], configPath, undefined);
+        if (plant[key] === undefined) {
+          throw new Error(plantName + ": Config not found for " + configPath);
+        }
       }
     }
-  }
+  });
 }
 
 async function callInit() {
-  const plant = await getPlant();
-  const initFns = propsByMetadata("init", plant);
+  // TODO(szymon) create a dependency tree
+  // and call init functions in the right order
+  await Promise.all(
+    Array.from(plants).map(async ([plantName, plant]) => {
+      const initFns = propsByMetadata("init", plant);
 
-  for (const fn of initFns) {
-    await plant[fn]();
-  }
+      for (const fn of initFns) {
+        await plant[fn]().catch((err: any) => {
+          logger.error("init failure [" + plantName + "]", err);
+          throw new Error("initFailure");
+        });
+      }
+    }),
+  );
 }
