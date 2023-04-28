@@ -7,8 +7,7 @@ import {
   PlantDef,
   Proc,
   Service,
-  ValidField
-ValidField,
+  ValidField,
 } from "./types.ts";
 import { getLogger } from "./logger.ts";
 export { getLogger } from "./logger.ts";
@@ -42,24 +41,25 @@ function dirExists(dir: string): boolean {
   }
 }
 
-function validateField(field: Field, servicesDir: string) : field is ValidField {
+function validateField(field: Field, servicesDir: string): ValidField {
   field = Field.parse(field);
-  
+
   Object.keys(field.plants).forEach((plantName) => {
     const plant = field.plants[plantName];
     plant.filePath = determineServicePath(
       servicesDir,
       plantName,
+      field.plants[plantName],
     );
     plant.config = plant.config ?? {};
-    plant.http = !!plant.config;
+    plant.http = !!plant.http;
     plant.proc = plant.proc ?? plantName;
   });
 
-  return true;
+  return field as ValidField;
 }
 
-export async function grow(field: Field) {
+export async function grow(rawField: Field) {
   const callerPath = path.dirname(caller() ?? "");
   let servicesDir = callerPath.split("file:///")[1] ?? "";
 
@@ -69,15 +69,15 @@ export async function grow(field: Field) {
     servicesDir = "/" + servicesDir;
   }
 
-  validateField(field, servicesDir);
-  
+  const field = validateField(rawField, servicesDir);
+
   const initializedIndicator = new Map<string, Deferred<any>>();
 
   for (const plantName of Object.keys(field.plants)) {
     initializedIndicator.set(plantName, defer());
   }
 
-  const procs = createProcs(field);
+  const procs = createProcs(field as ValidField);
 
   procs.forEach((_proc, procName) => {
     return procCommunication(procName, procs, field, () => {
@@ -245,7 +245,7 @@ const callMethod: CallMethod = (cfg) => {
 function procCommunication(
   procName: string,
   procs: Map<string, Proc>,
-  field: Field,
+  field: ValidField,
   onInitComplete: () => void,
 ): void {
   const proc = procs.get(procName)!;
@@ -261,7 +261,7 @@ function procCommunication(
 
         proc.worker.postMessage({
           init: {
-            field,
+            field: getTransferableField(field),
             proc: procName,
             portNames: Array.from(proc.procsPorts).map(([name]) => name),
             config,
@@ -281,6 +281,17 @@ function procCommunication(
       })
       .exhaustive();
   };
+}
+
+function getTransferableField(inputField: ValidField): any {
+  const field = _.cloneDeep(inputField);
+  delete field.http;
+
+  Object.keys(field.plants).forEach((plantName) => {
+    delete (field as any).plants[plantName].contracts;
+  });
+
+  return field;
 }
 
 // const channels = new Map<string[], MessageChannel>();
@@ -323,7 +334,15 @@ function toUnderscoreCase(text: string) {
   return text.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
-function determineServicePath(dir: string, plantName: string) {
+function determineServicePath(
+  dir: string,
+  plantName: string,
+  plantDef: PlantDef,
+) {
+  if (plantDef.filePath) {
+    return path.join(dir, plantDef.filePath);
+  }
+
   const fileName = toUnderscoreCase(plantName);
   let p = path.join(dir, fileName + ".ts");
 
@@ -344,13 +363,15 @@ function createProcs(field: ValidField): Map<string, Proc> {
   const procsNames = _.uniq(
     Object
       .entries(field.plants)
-      .map(([plantName, plantDef]) => plantDef.proc),
+      .map(([, plantDef]) => plantDef.proc),
   );
 
   const procs = new Map<string, Proc>();
   const channels = openChannels(procsNames);
 
-  for (const [procName] of procsNames) {
+  console.log("CHAN", channels);
+
+  for (const procName of procsNames) {
     procs.set(procName, {
       worker: new Worker(
         new URL(`./worker.ts?proc=${procName}`, import.meta.url),
@@ -398,7 +419,10 @@ function openChannels(
   for (let i = 0; i < procsNames.length; i++) {
     const procProcs = new Map<string, MessagePort>();
 
-    for (let j = i + 1; j < procsNames.length; j++) {
+    for (let j = 0; j < procsNames.length; j++) {
+      if (procsNames[i] === procsNames[j]) {
+        continue;
+      }
       const channel = channels.find((ch) =>
         ch.procNames.includes(procsNames[j]) &&
         ch.procNames.includes(procsNames[i])

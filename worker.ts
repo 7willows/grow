@@ -76,20 +76,18 @@ async function init(cfg: {
     plants.set(plantName, plant);
 
     updateConfig(cfg.config);
-    //   assignLoggers();
+    assignLoggers();
 
-    //   msg.init.toInject.forEach((injectedPlantName: string, index: number) => {
-    //     const port = event.ports[index];
-    //     listenOnPort(port);
-    //     ports.set(injectedPlantName, port);
-    //   });
-    //   await callInit();
+    plants.forEach((plant, plantName) => {
+      initInjectables(plantName, plant);
+    });
 
-    // inject
-    // set config
-    // set loogers
-    // call init
-    // post "initComplete" message
+    cfg.portNames.forEach((plantName, i) => {
+      listenOnPort(cfg.procPorts[i]);
+      ports.set(plantName, cfg.procPorts[i]);
+    });
+
+    await callInit();
   }
 }
 
@@ -334,7 +332,7 @@ function updateConfig(config: { [plantName: string]: any }) {
 
     if (!plant) {
       logger.error(`plant ${plantName} not found`);
-      throw new Error("plantNotFound");
+      return;
     }
 
     for (const key of Object.keys(plant)) {
