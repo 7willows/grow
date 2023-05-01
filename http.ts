@@ -53,8 +53,23 @@ async function tryFetch(
 }
 
 function serveClient(app: Hono) {
+  let client = "";
+
+  const url = new URL(import.meta.url);
+  const pathSplit = url.pathname.split("/");
+  pathSplit.pop();
+  pathSplit.push("client.js");
+  url.pathname = pathSplit.join("/");
+
+  tryFetch(5, url, {})
+    .then((res) => res.text())
+    .then((text) => {
+      client = text;
+    });
+
   app.get("/grow.js", (c) => {
-    return c.redirect("https://deno.land/x/grow/client.js");
+    c.header("content-type", "application/javascript");
+    return c.text(client);
   });
 }
 
