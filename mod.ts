@@ -369,8 +369,6 @@ function createProcs(field: ValidField): Map<string, Proc> {
   const procs = new Map<string, Proc>();
   const channels = openChannels(procsNames);
 
-  console.log("CHAN", channels);
-
   for (const procName of procsNames) {
     procs.set(procName, {
       worker: new Worker(
