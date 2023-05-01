@@ -52,33 +52,9 @@ async function tryFetch(
   }
 }
 
-async function serveClient(app: Hono) {
-  let client = "";
-
-  const url = new URL(import.meta.url);
-  const pathSplit = url.pathname.split("/");
-  pathSplit.pop();
-  pathSplit.push("client.js");
-  url.pathname = pathSplit.join("/");
-
-  const authToken = (Deno.env.get("DENO_AUTH_TOKENS") ?? "")
-    .split(";")
-    .map((pair) => pair.split("@"))
-    .find(([token, url]) => url === "gitea.7willows.com")?.[0];
-
-  tryFetch(5, url, {
-    headers: {
-      Authorization: `token ${authToken}`,
-    },
-  })
-    .then((res) => res.text())
-    .then((text) => {
-      client = text;
-    });
-
+function serveClient(app: Hono) {
   app.get("/grow.js", (c) => {
-    c.header("content-type", "application/javascript");
-    return c.text(client);
+    return c.redirect("https://deno.land/x/grow/client.js");
   });
 }
 
