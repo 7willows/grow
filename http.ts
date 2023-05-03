@@ -1,5 +1,5 @@
 import { Context, Hono, match, P, serve, StatusCode, z } from "./deps.ts";
-import { CallMethod, Field, Proc, Service } from "./types.ts";
+import { CallMethod, Field, Proc } from "./types.ts";
 
 export function isHttpEnabled(field: Field) {
   return (

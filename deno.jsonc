@@ -1,12 +1,14 @@
 {
-    "tasks": {
-        "run": "deno run --allow-net --allow-read --allow-env",
-        "example:simple": "deno task run examples/simple/main.ts",
-        "test": "deno test --allow-net --allow-read --allow-env mod_test.ts"
-    },
-    "lint": {
-        "rules": {
-            "exclude": ["no-explicit-any"]
-        }
+  "tasks": {
+    "run": "deno run --allow-net --allow-read --allow-env",
+    "example:simple": "deno task run examples/simple/main.ts",
+    "test": "deno test --allow-net --allow-read --allow-env test/basic_test.ts test/main_proc_test.ts"
+  },
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-explicit-any"
+      ]
     }
+  }
 }

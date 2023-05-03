@@ -6,12 +6,12 @@ import {
   MsgFromWorker,
   PlantDef,
   Proc,
-  Service,
   ValidField,
 } from "./types.ts";
 import { getLogger } from "./logger.ts";
 export { getLogger } from "./logger.ts";
 export type { Logger } from "./logger.ts";
+import * as channelRegistry from "./channel_registry.ts";
 
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 export type { GrowClient } from "./types.ts";
@@ -59,6 +59,14 @@ function validateField(field: Field, servicesDir: string): ValidField {
   return field as ValidField;
 }
 
+function getProcsNames(field: ValidField): Set<string> {
+  return Object.keys(field.plants).reduce((acc, plantName) => {
+    const proc = field.plants[plantName].proc;
+    acc.add(proc);
+    return acc;
+  }, new Set<string>());
+}
+
 export async function grow(rawField: Field) {
   const callerPath = path.dirname(caller() ?? "");
   let servicesDir = callerPath.split("file:///")[1] ?? "";
@@ -73,11 +81,13 @@ export async function grow(rawField: Field) {
 
   const initializedIndicator = new Map<string, Deferred<any>>();
 
-  for (const plantName of Object.keys(field.plants)) {
-    initializedIndicator.set(plantName, defer());
+  const procsNames = getProcsNames(field);
+
+  for (const procName of procsNames) {
+    initializedIndicator.set(procName, defer());
   }
 
-  const procs = createProcs(field as ValidField);
+  const procs = await createProcs(field as ValidField);
 
   procs.forEach((_proc, procName) => {
     return procCommunication(procName, procs, field, () => {
@@ -131,7 +141,7 @@ export async function grow(rawField: Field) {
 function handleErrors(
   proc: Proc,
 ) {
-  proc.worker.addEventListener("error", (event) => {
+  proc.worker.addEventListener("error", (event: any) => {
     logger.error(
       `Error in worker "${proc?.procName}" Reason: ${event.message}`,
     );
@@ -140,10 +150,16 @@ function handleErrors(
   });
 }
 
-function stop(field: Field, procs: Map<string, Proc>) {
-  for (const plantName of Object.keys(field.plants)) {
-    const proc = procs.get(plantName)!;
-    proc.worker.terminate();
+function stop(field: ValidField, procs: Map<string, Proc>) {
+  const procsNames = getProcsNames(field);
+
+  for (const procName of procsNames) {
+    const proc = procs.get(procName)!;
+    const worker = proc.worker;
+
+    if (worker instanceof Worker) {
+      worker.terminate();
+    }
   }
   calls = new Map();
 }
@@ -170,6 +186,15 @@ function findContracts(
   return plant.plantDef.contracts;
 }
 
+function findPlantProcName(
+  procs: Map<string, Proc>,
+  plantName: string,
+): string | undefined {
+  return Array.from(procs)
+    .find(([, proc]) => proc.plants.find((p) => p.plantName === plantName))
+    ?.[0];
+}
+
 function ensureValidArgs(cfg: {
   procs: Map<string, Proc>;
   args: any[];
@@ -178,9 +203,10 @@ function ensureValidArgs(cfg: {
 }) {
   const contracts = findContracts(cfg.procs, cfg.plantName);
   let methodDef: any;
+  const procName = findPlantProcName(cfg.procs, cfg.plantName);
 
-  if (!cfg.procs.get(cfg.plantName)) {
-    throw new Error("Plant not found, plant: " + cfg.plantName);
+  if (!cfg.procs.get(procName ?? "")) {
+    throw new Error("Plant worker not found, proc: " + cfg.plantName);
   }
 
   outer:
@@ -216,16 +242,14 @@ const callMethod: CallMethod = (cfg) => {
   const deferred = defer();
   calls.set(callId, deferred);
 
-  const procFindResult = Array.from(cfg.procs).find(([, proc]) =>
+  const proc = Array.from(cfg.procs).find(([, proc]) =>
     proc.plants.find((p) => p.plantName === cfg.plantName)
-  );
+  )?.[1];
 
-  if (!procFindResult) {
+  if (!proc) {
     logger.error(`proc not found for plant: ${cfg.plantName}`);
     throw new Error("procNotFound");
   }
-
-  const proc = procFindResult[1];
 
   proc.worker.postMessage({
     call: {
@@ -250,7 +274,7 @@ function procCommunication(
 ): void {
   const proc = procs.get(procName)!;
 
-  proc.worker.onmessage = (event) => {
+  proc.worker.addEventListener("message", (event: any) => {
     match<MsgFromWorker, void>(event.data)
       .with({ ready: true }, () => {
         const config: { [plantName: string]: any } = {};
@@ -280,7 +304,7 @@ function procCommunication(
         deferred.resolve(result);
       })
       .exhaustive();
-  };
+  });
 }
 
 function getTransferableField(inputField: ValidField): any {
@@ -293,41 +317,6 @@ function getTransferableField(inputField: ValidField): any {
 
   return field;
 }
-
-// const channels = new Map<string[], MessageChannel>();
-
-// function openChannels(
-//   plantName: string,
-//   toInject: string[],
-//   instances: Record<string, Service>,
-// ) {
-//   const portsMap: Record<string, MessagePort> = {};
-
-//   for (const serviceName of toInject) {
-//     if (
-//       channels.has([serviceName, plantName]) ||
-//       channels.has([plantName, serviceName])
-//     ) {
-//       continue;
-//     }
-
-//     const channel = new MessageChannel();
-//     channels.set([plantName, serviceName], channel);
-//     portsMap[serviceName] = channel.port1;
-
-//     if (!instances[serviceName]) {
-//       logger.error(`invalid inject("${serviceName}) on ${plantName}`);
-//     }
-
-//     instances[serviceName].worker.postMessage({
-//       inject: {
-//         plantName,
-//       },
-//     }, [channel.port2]);
-//   }
-
-//   return portsMap;
-// }
 
 function toUnderscoreCase(text: string) {
   text = text[0].toLowerCase() + text.slice(1);
@@ -359,7 +348,7 @@ function determineServicePath(
   throw new Error("Could not find service " + plantName);
 }
 
-function createProcs(field: ValidField): Map<string, Proc> {
+async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
   const procsNames = _.uniq(
     Object
       .entries(field.plants)
@@ -370,11 +359,20 @@ function createProcs(field: ValidField): Map<string, Proc> {
   const channels = openChannels(procsNames);
 
   for (const procName of procsNames) {
-    procs.set(procName, {
-      worker: new Worker(
+    let worker!: channelRegistry.IMessagePort;
+
+    if (procName === "main") {
+      worker = channelRegistry.createChannel(procName);
+      await import(`./worker.ts?proc=${procName}`);
+    } else {
+      worker = new Worker(
         new URL(`./worker.ts?proc=${procName}`, import.meta.url),
         { type: "module" },
-      ),
+      ) as any;
+    }
+
+    procs.set(procName, {
+      worker,
       procName,
       plants: Object.entries(field.plants).map(([plantName, plantDef]) => ({
         plantName,
@@ -435,40 +433,3 @@ function openChannels(
 
   return procInjections;
 }
-
-// const services = new Map<string, Service>();
-
-// for (const [plantName, plantDef] of Object.entries(field.plants)) {
-//   const proc = plantDef.proc ?? plantName;
-
-//   services.set(plantName, {
-//     plantName,
-//     plantDef,
-//     contracts: plantDef.contracts,
-//     worker: workersByProc.get(proc)!,
-//     proc,
-//   });
-// }
-
-// return services;
-// }
-
-// function createServices(plantDef: PlantDef, plantName: string, dir: string) : {
-//   const servicePath = plantDef.filePath
-//     ? path.join(dir, plantDef.filePath)
-//     : determineServicePath(dir, plantName);
-
-//   const queryString = `plantName=${plantName}&servicePath=${servicePath}`;
-
-//   const worker = new Worker(
-//     new URL(`./worker.ts?${queryString}`, import.meta.url),
-//     { type: "module" },
-//   );
-
-//   return {
-//     worker,
-//     plantDef,
-//     plantName,
-//     contracts: plantDef.contracts,
-//   };
-// }

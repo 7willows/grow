@@ -1,4 +1,5 @@
 import { Hono, z } from "./deps.ts";
+import * as channelRegistry from "./channel_registry.ts";
 
 export const PlantDef = z.object({
   contracts: z.array(z.any()),
@@ -24,20 +25,13 @@ export type ValidField = {
 };
 
 export type Proc = {
-  worker: Worker;
+  worker: channelRegistry.IMessagePort;
   procName: string;
   plants: {
     plantName: string;
     plantDef: PlantDef;
   }[];
   procsPorts: Map<string, MessagePort>;
-};
-
-export type Service = {
-  proc: Proc;
-  plantDef: PlantDef;
-  plantName: string;
-  contracts: z.ZodObject<any>[];
 };
 
 export type CallResult =

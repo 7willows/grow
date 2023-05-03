@@ -12,7 +12,11 @@ import {
 import * as helloService from "./services/hello.ts";
 import * as nameService from "./services/name.ts";
 
-describe("WorkflowAccess", () => {
+function sleep() {
+  return new Promise((resolve) => setTimeout(resolve, 1000));
+}
+
+describe("main proc", () => {
   let services: Crops;
   let hello!: helloService.IHello;
   let name!: nameService.IName;
@@ -37,7 +41,7 @@ describe("WorkflowAccess", () => {
     name = services.plant("Name");
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     services.kill();
   });
 

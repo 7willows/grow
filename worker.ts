@@ -4,40 +4,36 @@ import { getLogger } from "./logger.ts";
 import type {
   Call,
   CallResult,
-  MsgFromWorker,
   MsgToWorker,
   ValidField,
   WorkerToWorkerMsg,
 } from "./types.ts";
 import { defer, Deferred } from "./defer.ts";
+import * as channelRegistry from "./channel_registry.ts";
 
 const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
-// const plantName = url.searchParams.get("plantName") ?? "";
-// const servicePath = url.searchParams.get("servicePath") ?? "";
 
 const IDENTITY = Symbol("proxy_target_identity");
-// if (!plantName || !servicePath) {
-//   throw new Error("Missing plantName or servicePath");
-// }
 
-let plantPromise: Promise<any>;
 const calls = new Map<string, Deferred<any>>();
-const ports = new Map<string, MessagePort>();
+const ports = new Map<string, channelRegistry.IMessagePort>();
 const logger = getLogger({
   name: `WORKER[${proc}]`,
   sessionId: "",
   requestId: "",
 });
+const me: channelRegistry.IMessagePort = proc === "main"
+  ? channelRegistry.getPort(proc)!
+  : (self as any as channelRegistry.IMessagePort);
 
-ports.set("###MAIN", self as any);
+ports.set("###MAIN", me);
 
 const plants = new Map<string, any>();
 
-self.onmessage = (event: MessageEvent) => {
+me.addEventListener("message", (event: any) => {
   match(event.data as MsgToWorker)
     .with({ init: P.select() }, async (initMsg) => {
-      const msg = event.data as MsgToWorker;
       await init({
         field: initMsg.field,
         procName: initMsg.proc,
@@ -46,7 +42,7 @@ self.onmessage = (event: MessageEvent) => {
         config: initMsg.config,
       });
 
-      self.postMessage({ initComplete: true });
+      me.postMessage({ initComplete: true });
     })
     .with({ call: P.select() }, (call) => {
       callPlant(call);
@@ -55,7 +51,7 @@ self.onmessage = (event: MessageEvent) => {
       manageResult(result);
     })
     .exhaustive();
-};
+});
 
 async function init(cfg: {
   field: ValidField;
@@ -78,13 +74,13 @@ async function init(cfg: {
     updateConfig(cfg.config);
     assignLoggers();
 
-    plants.forEach((plant, plantName) => {
-      initInjectables(plantName, plant);
-    });
-
     cfg.portNames.forEach((plantName, i) => {
       listenOnPort(cfg.procPorts[i]);
       ports.set(plantName, cfg.procPorts[i]);
+    });
+
+    plants.forEach((plant, plantName) => {
+      initInjectables(plantName, plant);
     });
 
     await callInit();
@@ -131,7 +127,9 @@ async function initPlant(plantName: string, plantPath: string): Promise<any> {
   }
 }
 
-self.postMessage({ ready: true });
+setTimeout(() => {
+  me.postMessage({ ready: true });
+});
 
 function manageResult(result: CallResult) {
   const deferred = calls.get(result.callId);
@@ -159,7 +157,7 @@ function manageResult(result: CallResult) {
 }
 
 async function callPlant(call: Call) {
-  const port = ports.get(call.caller);
+  const port = ports.get(call.caller)!;
 
   if (!port) {
     throw new Error(`No port for ${call.caller}`);
@@ -171,6 +169,32 @@ async function callPlant(call: Call) {
     logger.error(`plant ${call.receiver} not found`);
   }
 
+  try {
+    const result = await callMethod(plant, call);
+
+    port.postMessage({
+      callResult: {
+        type: "success",
+        result,
+        callId: call.callId,
+        receiver: call.caller,
+      },
+    });
+  } catch (err) {
+    port.postMessage({
+      callResult: {
+        callId: call.callId,
+        receiver: call.caller,
+        type: "error",
+        name: err.name,
+        message: err.message,
+        ...err,
+      },
+    });
+  }
+}
+
+async function callMethod(plant: any, call: Call): Promise<any> {
   const plantLogger = getLogger({
     name: `${call.receiver}.${call.method}()`,
     sessionId: call.sessionId,
@@ -187,27 +211,10 @@ async function callPlant(call: Call) {
     plantLogger.debug("started");
     const result = await wrappedPlant[call.method](...call.args);
     plantLogger.debug("success");
-
-    port.postMessage({
-      callResult: {
-        type: "success",
-        result,
-        callId: call.callId,
-        receiver: call.caller,
-      },
-    });
+    return result;
   } catch (err) {
     plantLogger.error("failure", err);
-    port.postMessage({
-      callResult: {
-        callId: call.callId,
-        receiver: call.caller,
-        type: "error",
-        name: err.name,
-        message: err.message,
-        ...err,
-      },
-    });
+    throw err;
   }
 }
 
@@ -296,6 +303,20 @@ function buildProxy(plantName: string, targetService: string) {
 
       return (...args: any[]) => {
         const callId = crypto.randomUUID();
+        const growParams = (target as any)["###GROW"] ?? {};
+
+        if (plants.has(targetService)) {
+          return callMethod(plants.get(targetService)!, {
+            sessionId: growParams.sessionId,
+            requestId: growParams.requestId,
+            caller: plantName,
+            receiver: targetService,
+            method: prop as any,
+            args,
+            callId,
+          });
+        }
+
         const deferred = defer();
 
         calls.set(callId, deferred);
@@ -305,8 +326,6 @@ function buildProxy(plantName: string, targetService: string) {
         if (!port) {
           throw new Error(`No port for ${targetService}`);
         }
-
-        const growParams = (target as any)["###GROW"] ?? {};
 
         port.postMessage({
           call: {
@@ -331,7 +350,7 @@ function updateConfig(config: { [plantName: string]: any }) {
     const plant = plants.get(plantName);
 
     if (!plant) {
-      logger.error(`plant ${plantName} not found`);
+      // it's ok, we get config for all plants and this one must be not ours
       return;
     }
 
