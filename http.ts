@@ -68,8 +68,8 @@ function serveClient(app: Hono) {
     });
 
   app.get("/grow.js", (c) => {
-    c.header("content-type", "application/javascript");
-    return c.text(client);
+    c.header("content-type", "text/javascript");
+    return c.body(client);
   });
 }
 

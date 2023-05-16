@@ -12,10 +12,6 @@ import {
 import * as helloService from "./services/hello.ts";
 import * as nameService from "./services/name.ts";
 
-function sleep() {
-  return new Promise((resolve) => setTimeout(resolve, 1000));
-}
-
 describe("main proc", () => {
   let services: Crops;
   let hello!: helloService.IHello;
