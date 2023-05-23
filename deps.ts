@@ -8,6 +8,8 @@ export type { StatusCode } from "https://deno.land/x/hono@v3.1.6/utils/http-stat
 export * as path from "https://deno.land/std@0.184.0/path/mod.ts";
 export { serve } from "https://deno.land/std@0.184.0/http/server.ts";
 export { existsSync } from "https://deno.land/std@0.184.0/fs/mod.ts";
+import depsResolver from "npm:dependency-resolver@2.0.1";
+export const DependencyResolver = depsResolver;
 export {
   assertEquals,
   assertRejects,

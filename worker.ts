@@ -1,4 +1,4 @@
-import { _, log, match, P, Reflect } from "./deps.ts";
+import { _, DependencyResolver, log, match, P, Reflect } from "./deps.ts";
 import { getLogger } from "./logger.ts";
 
 import type {
@@ -62,6 +62,12 @@ async function init(cfg: {
     [plantName: string]: any;
   };
 }): Promise<void> {
+  const resolver = new DependencyResolver();
+
+  for (const [plantName] of Object.entries(cfg.field.plants)) {
+    resolver.add(plantName);
+  }
+
   for (const [plantName, plantDef] of Object.entries(cfg.field.plants)) {
     const plantProcName = plantDef.proc ?? plantName;
     if (plantProcName !== cfg.procName) {
@@ -80,11 +86,11 @@ async function init(cfg: {
     });
 
     plants.forEach((plant, plantName) => {
-      initInjectables(plantName, plant);
+      initInjectables(plantName, plant, resolver);
     });
-
-    await callInit();
   }
+
+  await callInit(resolver.sort());
 }
 
 function assignLoggers() {
@@ -272,7 +278,7 @@ function propsByMetadata(metadataKey: string, plant: any) {
   return props;
 }
 
-function initInjectables(plantName: string, plant: any) {
+function initInjectables(plantName: string, plant: any, resolver: any) {
   const toInject: string[] = [];
 
   for (const key of Object.keys(plant)) {
@@ -286,6 +292,7 @@ function initInjectables(plantName: string, plant: any) {
       meta = key[0].toUpperCase() + key.slice(1);
     }
 
+    resolver.setDependency(plantName, meta);
     toInject.push(meta);
 
     plant[key] = buildProxy(plantName, meta);
@@ -371,19 +378,20 @@ function updateConfig(config: { [plantName: string]: any }) {
   });
 }
 
-async function callInit() {
-  // TODO(szymon) create a dependency tree
-  // and call init functions in the right order
-  await Promise.all(
-    Array.from(plants).map(async ([plantName, plant]) => {
-      const initFns = propsByMetadata("init", plant);
+async function callInit(plantsOrder: string[]) {
+  for (const plantName of plantsOrder) {
+    if (!plants.has(plantName)) {
+      continue;
+    }
 
-      for (const fn of initFns) {
-        await plant[fn]().catch((err: any) => {
-          logger.error("init failure [" + plantName + "]", err);
-          throw new Error("initFailure");
-        });
-      }
-    }),
-  );
+    const plant = plants.get(plantName);
+    const initFns = propsByMetadata("init", plant);
+
+    for (const fn of initFns) {
+      await plant[fn]().catch((err: any) => {
+        logger.error("init failure [" + plantName + "]", err);
+        throw new Error("initFailure");
+      });
+    }
+  }
 }
