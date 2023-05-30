@@ -20,7 +20,7 @@ class ZodError extends Error {
       });
     },
     addEventListener(eventType, listener) {
-      this.listeners[eventType] = listeners[eventType] || [];
+      listeners[eventType] = listeners[eventType] || [];
       if (!listeners[eventType].includes(listener)) {
         listeners[eventType].push(listener);
       }
