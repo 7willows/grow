@@ -4,3 +4,4 @@
 
 *.vsidx
 .vs/*
+.vscode/settings.json

@@ -23,3 +23,15 @@ export function logger(): PropertyDecorator {
 export function init(): MethodDecorator {
   return Reflect.metadata("init", true);
 }
+
+export function caller(): MethodDecorator {
+  return Reflect.metadata("caller", true);
+}
+
+export function on(): MethodDecorator {
+  return Reflect.metadata("on", true);
+}
+
+export function queuedQuery(): MethodDecorator {
+  return Reflect.metadata("queued", true);
+}
