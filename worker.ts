@@ -5,6 +5,7 @@ import type {
   Call,
   CallResult,
   MsgToWorker,
+  Send,
   ValidField,
   WorkerToWorkerMsg,
 } from "./types.ts";
@@ -15,6 +16,7 @@ const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
 
 const IDENTITY = Symbol("proxy_target_identity");
+const LISTENERS = Symbol("listeners");
 
 const calls = new Map<string, Deferred<any>>();
 const ports = new Map<string, channelRegistry.IMessagePort>();
@@ -44,11 +46,21 @@ me.addEventListener("message", (event: any) => {
 
       me.postMessage({ initComplete: true });
     })
-    .with({ call: P.select() }, (call) => {
+    .with({ call: P.select() }, (call: Call) => {
       callPlant(call);
     })
-    .with({ callResult: P.select() }, (result) => {
+    .with({ callResult: P.select() }, (result: CallResult) => {
       manageResult(result);
+    })
+    .with({ send: P.select() }, (send: Send) => {
+      const plant = plants.get(send.receiver);
+
+      for (const listener of findListeners(send.receiver, send.args)) {
+        callMethod(plant, {
+          ...send,
+          method: listener,
+        });
+      }
     })
     .exhaustive();
 });
@@ -77,9 +89,6 @@ async function init(cfg: {
     const plant = await initPlant(plantName, plantDef.filePath);
     plants.set(plantName, plant);
 
-    updateConfig(cfg.config);
-    assignLoggers();
-
     cfg.portNames.forEach((plantName, i) => {
       listenOnPort(cfg.procPorts[i]);
       ports.set(plantName, cfg.procPorts[i]);
@@ -90,7 +99,27 @@ async function init(cfg: {
     });
   }
 
+  updateConfig(cfg.config);
+  assignLoggers();
+  setupMsgHandlers();
+
   await callInit(resolver.sort());
+}
+
+function setupMsgHandlers() {
+  plants.forEach((plant, plantName) => {
+    const funcs = propsByMetadata("on", plant);
+
+    plant[LISTENERS] = [];
+
+    for (const f of funcs) {
+      const meta = Reflect.getMetadata("on", plant, f);
+      plant[LISTENERS].push({
+        matcher: meta,
+        method: f,
+      });
+    }
+  });
 }
 
 function assignLoggers() {
@@ -110,11 +139,21 @@ function assignLoggers() {
 function listenOnPort(port: MessagePort) {
   port.onmessage = (event: MessageEvent) => {
     match(event.data as WorkerToWorkerMsg)
-      .with({ call: P.select() }, (call) => {
+      .with({ call: P.select() }, (call: Call) => {
         callPlant(call);
       })
-      .with({ callResult: P.select() }, (result) => {
+      .with({ callResult: P.select() }, (result: CallResult) => {
         manageResult(result);
+      })
+      .with({ send: P.select() }, (send: Send) => {
+        const plant = plants.get(send.receiver);
+
+        for (const listener of findListeners(send.receiver, send.args)) {
+          callMethod(plant, {
+            ...send,
+            method: listener,
+          });
+        }
       })
       .exhaustive();
   };
@@ -319,6 +358,67 @@ function initInjectables(plantName: string, plant: any, resolver: any) {
   return toInject;
 }
 
+type SendConfig = {
+  receiver: string;
+  args: any[];
+  caller: string;
+  sessionId: string;
+  requestId: string;
+  callId: string;
+};
+
+function sendToWorker(cfg: SendConfig) {
+  if (plants.has(cfg.receiver)) {
+    const plant = plants.get(cfg.receiver);
+    for (const listener of findListeners(cfg.receiver, cfg.args)) {
+      callMethod(plant, {
+        ...cfg,
+        method: listener,
+      });
+    }
+  } else {
+    const port = ports.get(cfg.receiver);
+    if (!port) {
+      throw new Error(`No port for ${cfg.receiver}`);
+    }
+
+    port.postMessage({
+      send: {
+        args: cfg.args,
+        caller: cfg.caller,
+        receiver: cfg.receiver,
+        sendId: crypto.randomUUID(),
+        sessionId: cfg.sessionId,
+        requestId: cfg.requestId,
+        callId: cfg.callId,
+      } satisfies Send,
+    });
+  }
+}
+
+function findListeners(plantName: string, args: any[]): string[] {
+  const plant = plants.get(plantName);
+
+  if (!plant) {
+    logger.error("Plant " + plantName + " not found");
+    throw new Error("plant not found");
+  }
+
+  const funcs: string[] = [];
+
+  for (const l of plant[LISTENERS]) {
+    if (matchListener(args, l.matcher)) {
+      funcs.push(l.method);
+    }
+  }
+
+  return funcs;
+}
+
+function matchListener(args: any[], matcher: any[]): boolean {
+  return matcher.every((m, index) => m === args[index]);
+}
+
 function buildProxy(plantName: string, targetService: string) {
   return new Proxy({}, {
     get: (target, prop) => {
@@ -329,6 +429,17 @@ function buildProxy(plantName: string, targetService: string) {
       return (...args: any[]) => {
         const callId = crypto.randomUUID();
         const growParams = (target as any)["###GROW"] ?? {};
+
+        if (prop === "$send") {
+          return sendToWorker({
+            sessionId: growParams.sessionId,
+            requestId: growParams.requestId,
+            caller: plantName,
+            receiver: targetService,
+            args,
+            callId,
+          });
+        }
 
         if (plants.has(targetService)) {
           return callMethod(plants.get(targetService)!, {

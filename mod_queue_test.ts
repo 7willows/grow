@@ -16,10 +16,22 @@ Deno.test("queue", async (t) => {
     },
   });
 
+  const publisher = crops.plant<IPublisher>("Publisher");
+  const subscriber = crops.plant<ISubscriber>("Subscriber");
+
   await t.step("@caller", async () => {
-    const result = await crops.plant<any>("Subscriber").goAndSubscribe();
+    const result = await subscriber.goAndSubscribe();
 
     assertEquals(result, "subscriber");
+  });
+
+  await t.step("@on()", async () => {
+    await subscriber.goAndSubscribe();
+    await publisher.publish();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const v = await subscriber.whatIsFoo();
+
+    assertEquals(v, "bar");
   });
 
   await crops.kill();

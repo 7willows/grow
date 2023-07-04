@@ -28,10 +28,10 @@ export function caller(): MethodDecorator {
   return Reflect.metadata("caller", true);
 }
 
-export function on(): MethodDecorator {
-  return Reflect.metadata("on", true);
+export function on(...what: any[]): MethodDecorator {
+  return Reflect.metadata("on", what);
 }
 
-export function queuedQuery(): MethodDecorator {
+export function queued(): MethodDecorator {
   return Reflect.metadata("queued", true);
 }

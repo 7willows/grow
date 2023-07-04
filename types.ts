@@ -54,6 +54,16 @@ export type Call = {
   callId: string;
 };
 
+export type Send = {
+  args: any[];
+  caller: string;
+  receiver: string;
+  sendId: string;
+  sessionId: string;
+  requestId: string;
+  callId: string;
+};
+
 export type MsgToWorker =
   | {
     init: {
@@ -66,7 +76,8 @@ export type MsgToWorker =
     };
   }
   | { call: Call }
-  | { callResult: CallResult };
+  | { callResult: CallResult }
+  | { send: Send };
 
 export type MsgFromWorker =
   | { ready: true }
@@ -75,7 +86,8 @@ export type MsgFromWorker =
 
 export type WorkerToWorkerMsg =
   | { call: Call; receiverPlant: string }
-  | { callResult: CallResult; receiverPlant: string };
+  | { callResult: CallResult; receiverPlant: string }
+  | { send: Send };
 
 type CallMethodCfg = {
   sessionId: string;
