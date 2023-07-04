@@ -168,11 +168,20 @@ async function callPlant(call: Call) {
   if (!port) {
     throw new Error(`No port for ${call.caller}`);
   }
-
   const plant = plants.get(call.receiver);
 
   if (!plant) {
     logger.error(`plant ${call.receiver} not found`);
+
+    return port.postMessage({
+      callResult: {
+        callId: call.callId,
+        receiver: call.caller,
+        type: "error",
+        name: "plantNotFound",
+        message: "Plant " + call.receiver + " not found",
+      },
+    });
   }
 
   try {
@@ -213,9 +222,18 @@ async function callMethod(plant: any, call: Call): Promise<any> {
     requestId: call.requestId,
   });
 
+  const shouldInjectCaller = Reflect.getMetadata("caller", plant, call.method);
+
+  let args = [...call.args];
+
+  if (shouldInjectCaller) {
+    const callerProxy: any = buildProxy(call.receiver, call.caller);
+    args = [callerProxy, ...args];
+  }
+
   try {
     plantLogger.debug("started");
-    const result = await wrappedPlant[call.method](...call.args);
+    const result = await wrappedPlant[call.method](...args);
     plantLogger.debug("success");
     return result;
   } catch (err) {

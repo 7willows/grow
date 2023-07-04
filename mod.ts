@@ -374,10 +374,12 @@ async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
     procs.set(procName, {
       worker,
       procName,
-      plants: Object.entries(field.plants).map(([plantName, plantDef]) => ({
-        plantName,
-        plantDef,
-      })),
+      plants: Object.entries(field.plants)
+        .filter(([, plantDef]: any) => plantDef.proc === procName)
+        .map(([plantName, plantDef]) => ({
+          plantName,
+          plantDef,
+        })),
       procsPorts: channels.get(procName)!,
     });
   }
