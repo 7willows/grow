@@ -14,7 +14,8 @@ export type { Logger } from "./logger.ts";
 import * as channelRegistry from "./channel_registry.ts";
 
 import { isHttpEnabled, startHttpServer } from "./http.ts";
-export type { GrowClient } from "./types.ts";
+import { Queues } from "./queues.ts";
+import { GrowClient, Send, SendAck } from "./types.ts";
 
 export * from "./decorators.ts";
 
@@ -89,8 +90,21 @@ export async function grow(rawField: Field) {
 
   const procs = await createProcs(field as ValidField);
 
+  const queues = new Queues(
+    getLogger({ name: "queues:main", sessionId: "", requestId: "" }),
+    function (send: Send) {
+      const proc = getProc(procs, send.receiver);
+
+      if (!proc) {
+        throw new Error("proc not found: " + send.receiver);
+      }
+
+      proc.worker.postMessage({ send });
+    },
+  );
+
   procs.forEach((_proc, procName) => {
-    return procCommunication(procName, procs, field, () => {
+    return procCommunication(procName, queues, procs, field, () => {
       initializedIndicator.get(procName)!.resolve(null);
     });
   });
@@ -116,6 +130,18 @@ export async function grow(rawField: Field) {
       return new Proxy({}, {
         get: (_, methodName: string) => {
           return async (...args: any[]) => {
+            if (methodName === "$send") {
+              do$send({
+                procs,
+                queues,
+                plantName,
+                sessionId: sessionId ?? "",
+                requestId: crypto.randomUUID(),
+                args,
+              });
+              return;
+            }
+
             const r = await callMethod({
               sessionId: sessionId ?? "",
               requestId: crypto.randomUUID(),
@@ -242,14 +268,7 @@ const callMethod: CallMethod = (cfg) => {
   const deferred = defer();
   calls.set(callId, deferred);
 
-  const proc = Array.from(cfg.procs).find(([, proc]) =>
-    proc.plants.find((p) => p.plantName === cfg.plantName)
-  )?.[1];
-
-  if (!proc) {
-    logger.error(`proc not found for plant: ${cfg.plantName}`);
-    throw new Error("procNotFound");
-  }
+  const proc = getProc(cfg.procs, cfg.plantName);
 
   proc.worker.postMessage({
     call: {
@@ -266,8 +285,43 @@ const callMethod: CallMethod = (cfg) => {
   return deferred.promise as any;
 };
 
+function getProc(procs: Map<string, Proc>, plantName: string): Proc {
+  const proc =
+    (Array.from(procs).find(([, proc]) =>
+      proc.plants.find((p) => p.plantName === plantName)
+    ) as Proc[])?.[1];
+
+  if (!proc) {
+    logger.error(`proc not found for plant: ${plantName}`);
+    throw new Error("procNotFound");
+  }
+
+  return proc;
+}
+
+function do$send(cfg: {
+  procs: Map<string, Proc>;
+  queues: Queues;
+  plantName: string;
+  sessionId: string;
+  requestId: string;
+  args: any[];
+}): void {
+  const proc = getProc(cfg.procs, cfg.plantName);
+
+  cfg.queues.enqueue({
+    args: cfg.args,
+    caller: "###MAIN",
+    receiver: cfg.plantName,
+    sendId: crypto.randomUUID(),
+    sessionId: cfg.sessionId,
+    requestId: cfg.requestId,
+  });
+}
+
 function procCommunication(
   procName: string,
+  queues: Queues,
   procs: Map<string, Proc>,
   field: ValidField,
   onInitComplete: () => void,
@@ -294,6 +348,9 @@ function procCommunication(
       })
       .with({ initComplete: true }, () => {
         onInitComplete();
+      })
+      .with({ sendAck: P.select() }, (sendAck: SendAck) => {
+        queues.onAck(sendAck);
       })
       .with({ callResult: P.select() }, (result) => {
         const deferred = calls.get(result.callId);

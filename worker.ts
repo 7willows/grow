@@ -11,6 +11,8 @@ import type {
 } from "./types.ts";
 import { defer, Deferred } from "./defer.ts";
 import * as channelRegistry from "./channel_registry.ts";
+import { SendAck } from "./types.ts";
+import { Queues } from "./queues.ts";
 
 const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
@@ -32,6 +34,18 @@ const me: channelRegistry.IMessagePort = proc === "main"
 ports.set("###MAIN", me);
 
 const plants = new Map<string, any>();
+const queues = new Queues(
+  getLogger({ name: "queues:" + proc, sessionId: "", requestId: "" }),
+  function (send: Send): void {
+    const port = ports.get(send.receiver);
+
+    if (!port) {
+      throw new Error("port to " + send.receiver + " not found");
+    }
+
+    port.postMessage({ send });
+  },
+);
 
 me.addEventListener("message", (event: any) => {
   match(event.data as MsgToWorker)
@@ -58,9 +72,23 @@ me.addEventListener("message", (event: any) => {
       for (const listener of findListeners(send.receiver, send.args)) {
         callMethod(plant, {
           ...send,
+          callId: send.sendId,
           method: listener,
         });
       }
+
+      const port = ports.get(send.caller);
+
+      if (!port) {
+        throw new Error("no port for " + send.caller);
+      }
+
+      port.postMessage({
+        sendAck: {
+          sendId: send.sendId,
+          receiver: send.receiver,
+        },
+      });
     })
     .exhaustive();
 });
@@ -151,9 +179,13 @@ function listenOnPort(port: MessagePort) {
         for (const listener of findListeners(send.receiver, send.args)) {
           callMethod(plant, {
             ...send,
+            callId: send.sendId,
             method: listener,
           });
         }
+      })
+      .with({ sendAck: P.select() }, (sendAck: SendAck) => {
+        queues.onAck(sendAck);
       })
       .exhaustive();
   };
@@ -364,7 +396,7 @@ type SendConfig = {
   caller: string;
   sessionId: string;
   requestId: string;
-  callId: string;
+  sendId: string;
 };
 
 function sendToWorker(cfg: SendConfig) {
@@ -373,25 +405,18 @@ function sendToWorker(cfg: SendConfig) {
     for (const listener of findListeners(cfg.receiver, cfg.args)) {
       callMethod(plant, {
         ...cfg,
+        callId: cfg.sendId,
         method: listener,
       });
     }
   } else {
-    const port = ports.get(cfg.receiver);
-    if (!port) {
-      throw new Error(`No port for ${cfg.receiver}`);
-    }
-
-    port.postMessage({
-      send: {
-        args: cfg.args,
-        caller: cfg.caller,
-        receiver: cfg.receiver,
-        sendId: crypto.randomUUID(),
-        sessionId: cfg.sessionId,
-        requestId: cfg.requestId,
-        callId: cfg.callId,
-      } satisfies Send,
+    queues.enqueue({
+      args: cfg.args,
+      caller: cfg.caller,
+      receiver: cfg.receiver,
+      sendId: cfg.sendId,
+      sessionId: cfg.sessionId,
+      requestId: cfg.requestId,
     });
   }
 }
@@ -437,7 +462,7 @@ function buildProxy(plantName: string, targetService: string) {
             caller: plantName,
             receiver: targetService,
             args,
-            callId,
+            sendId: callId,
           });
         }
 

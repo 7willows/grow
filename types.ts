@@ -61,7 +61,12 @@ export type Send = {
   sendId: string;
   sessionId: string;
   requestId: string;
-  callId: string;
+};
+
+export type SendAck = {
+  sendId: string;
+  caller: string;
+  receiver: string;
 };
 
 export type MsgToWorker =
@@ -82,12 +87,14 @@ export type MsgToWorker =
 export type MsgFromWorker =
   | { ready: true }
   | { initComplete: true }
-  | { callResult: CallResult };
+  | { callResult: CallResult }
+  | { sendAck: SendAck };
 
 export type WorkerToWorkerMsg =
   | { call: Call; receiverPlant: string }
   | { callResult: CallResult; receiverPlant: string }
-  | { send: Send };
+  | { send: Send }
+  | { sendAck: SendAck };
 
 type CallMethodCfg = {
   sessionId: string;
