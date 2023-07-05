@@ -2,7 +2,7 @@ import { Logger } from "./logger.ts";
 import { Send, SendAck } from "./types.ts";
 
 const MAX_TRIES = 3;
-const TIMEOUT = 1000;
+const TIMEOUT = 500;
 
 type Queue = {
   items: Item[];
@@ -74,6 +74,10 @@ export class Queues {
 
     const item = queue.items[0];
 
+    if (!item) {
+      return;
+    }
+
     if (item.tries >= MAX_TRIES) {
       this.log.error("max tries reached, dropping message", item.send);
       queue.items = queue.items.filter((it) => it !== item);
@@ -96,6 +100,8 @@ export class Queues {
           if (diff > TIMEOUT) {
             this.log.debug("timeout reached, re-adding message", item.send);
             item.state = "ready";
+            queue.items = queue.items.filter((it) => it !== item);
+            queue.items.push(item);
           }
         }
       }

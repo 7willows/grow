@@ -21,7 +21,6 @@ Deno.test("queue", async (t) => {
 
   await t.step("@caller", async () => {
     const result = await subscriber.goAndSubscribe();
-
     assertEquals(result, "subscriber");
   });
 
@@ -32,6 +31,14 @@ Deno.test("queue", async (t) => {
     const v = await subscriber.whatIsFoo();
 
     assertEquals(v, "bar");
+  });
+
+  await t.step("@queue()", async () => {
+    await publisher.changeName();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const who = await subscriber.whoami();
+
+    assertEquals(who, "changed");
   });
 
   await crops.kill();

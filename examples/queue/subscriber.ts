@@ -1,4 +1,4 @@
-import { inject, on } from "../../mod.ts";
+import { inject, on, queue } from "../../mod.ts";
 import { IPublisher, ISubscriber } from "./contract.ts";
 
 export class Subscriber implements ISubscriber {
@@ -7,6 +7,7 @@ export class Subscriber implements ISubscriber {
 
   private data = {
     fooValue: "",
+    name: "subscriber",
   };
 
   public async goAndSubscribe(): Promise<string> {
@@ -23,6 +24,13 @@ export class Subscriber implements ISubscriber {
   }
 
   async whoami() {
-    return "subscriber";
+    console.log("get", this.data);
+    return this.data.name;
+  }
+
+  @on("changeName")
+  public change(_: any, name: string): void {
+    console.log("change");
+    this.data.name = name;
   }
 }

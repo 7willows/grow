@@ -32,6 +32,6 @@ export function on(...what: any[]): MethodDecorator {
   return Reflect.metadata("on", what);
 }
 
-export function queued(): MethodDecorator {
-  return Reflect.metadata("queued", true);
+export function queue(serviceName?: string): PropertyDecorator {
+  return Reflect.metadata("queue", serviceName || "###DEDUCE");
 }

@@ -4,7 +4,11 @@ export const IPublisher = z.object({
   subscribe: z.function()
     .returns(z.string().promise()),
 
-  publish: z.function(),
+  publish: z.function()
+    .returns(z.void().promise()),
+
+  changeName: z.function()
+    .returns(z.void().promise()),
 });
 export type IPublisher = z.infer<typeof IPublisher>;
 

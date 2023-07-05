@@ -161,6 +161,20 @@ export async function grow(rawField: Field) {
         },
       }) as T;
     },
+    queue(plantName: string, sessionId: string) {
+      return {
+        $send(...args: any[]) {
+          do$send({
+            procs,
+            queues,
+            plantName,
+            sessionId: sessionId ?? "",
+            requestId: crypto.randomUUID(),
+            args,
+          });
+        },
+      };
+    },
   };
 }
 

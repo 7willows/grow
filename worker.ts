@@ -86,8 +86,9 @@ me.addEventListener("message", (event: any) => {
       port.postMessage({
         sendAck: {
           sendId: send.sendId,
+          caller: send.caller,
           receiver: send.receiver,
-        },
+        } satisfies SendAck,
       });
     })
     .exhaustive();
@@ -124,6 +125,7 @@ async function init(cfg: {
 
     plants.forEach((plant, plantName) => {
       initInjectables(plantName, plant, resolver);
+      initQueues(plantName, plant);
     });
   }
 
@@ -183,6 +185,20 @@ function listenOnPort(port: MessagePort) {
             method: listener,
           });
         }
+
+        const port = ports.get(send.caller);
+
+        if (!port) {
+          throw new Error("no port for " + send.caller);
+        }
+
+        port.postMessage({
+          sendAck: {
+            sendId: send.sendId,
+            caller: send.caller,
+            receiver: send.receiver,
+          } satisfies SendAck,
+        });
       })
       .with({ sendAck: P.select() }, (sendAck: SendAck) => {
         queues.onAck(sendAck);
@@ -321,6 +337,7 @@ function wrapPlant<T extends Record<string, unknown>>(
   const loggers = propsByMetadata("logger", plant);
   const requestIds = propsByMetadata("requestId", plant);
   const injected = propsByMetadata("inject", plant);
+  const queued = propsByMetadata("queue", plant);
 
   const wrapped = Object.create(plant);
 
@@ -345,6 +362,17 @@ function wrapPlant<T extends Record<string, unknown>>(
     };
 
     wrapped[key] = inj;
+  }
+
+  for (const key of queued) {
+    const q = Object.create((plant as any)[key]);
+
+    q[IDENTITY]["###GROW"] = {
+      sessionId: cfg.sessionId,
+      requestId: cfg.requestId,
+    };
+
+    wrapped[key] = q;
   }
 
   return wrapped;
@@ -388,6 +416,22 @@ function initInjectables(plantName: string, plant: any, resolver: any) {
   }
 
   return toInject;
+}
+
+function initQueues(plantName: string, plant: any): void {
+  for (const key of Object.keys(plant)) {
+    let meta = Reflect.getMetadata("queue", plant, key);
+
+    if (!meta) {
+      continue;
+    }
+
+    if (meta === "###DEDUCE") {
+      meta = key[0].toUpperCase() + key.slice(1);
+    }
+
+    plant[key] = buildQueueWrapper(plantName, meta);
+  }
 }
 
 type SendConfig = {
@@ -442,6 +486,29 @@ function findListeners(plantName: string, args: any[]): string[] {
 
 function matchListener(args: any[], matcher: any[]): boolean {
   return matcher.every((m, index) => m === args[index]);
+}
+
+function buildQueueWrapper(plantName: string, targetService: string) {
+  const wrapper = {
+    get [IDENTITY]() {
+      return wrapper;
+    },
+    $send(...args: any[]): void {
+      const growParams = (wrapper as any)["###GROW"] ?? {};
+
+      sendToWorker({
+        sessionId: growParams.sessionId,
+        requestId: growParams.requestId,
+        caller: plantName,
+        receiver: targetService,
+        args,
+        sendId: crypto.randomUUID(),
+      });
+      return;
+    },
+  };
+
+  return wrapper;
 }
 
 function buildProxy(plantName: string, targetService: string) {

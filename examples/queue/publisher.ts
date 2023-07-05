@@ -1,7 +1,10 @@
-import { caller, inject } from "../../mod.ts";
+import { caller, inject, queue } from "../../mod.ts";
 import { IPublisher } from "./contract.ts";
 
 export class Publisher implements IPublisher {
+  @queue("Subscriber")
+  private subscriber: any;
+
   private data: any = {
     subscriber: undefined,
   };
@@ -14,5 +17,9 @@ export class Publisher implements IPublisher {
 
   public async publish(): Promise<void> {
     this.data.subscriber.$send("foo", "bar");
+  }
+
+  public async changeName(): Promise<void> {
+    this.subscriber.$send("changeName", "changed");
   }
 }
