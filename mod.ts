@@ -15,7 +15,7 @@ import * as channelRegistry from "./channel_registry.ts";
 
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 import { Queues } from "./queues.ts";
-import { GrowClient, Send, SendAck } from "./types.ts";
+import { Send, SendAck } from "./types.ts";
 
 export * from "./decorators.ts";
 
@@ -47,14 +47,20 @@ function validateField(field: Field, servicesDir: string): ValidField {
 
   Object.keys(field.plants).forEach((plantName) => {
     const plant = field.plants[plantName];
-    plant.filePath = determineServicePath(
-      servicesDir,
-      plantName,
-      field.plants[plantName],
-    );
+    plant.proc = plant.proc ?? plantName;
+
+    const procConfig = field.procs?.[plant.proc];
+
+    if (!procConfig?.cmd) {
+      plant.filePath = determineServicePath(
+        servicesDir,
+        plantName,
+        field.plants[plantName],
+      );
+    }
+
     plant.config = plant.config ?? {};
     plant.http = !!plant.http;
-    plant.proc = plant.proc ?? plantName;
   });
 
   return field as ValidField;
@@ -419,6 +425,34 @@ function determineServicePath(
   throw new Error("Could not find service " + plantName);
 }
 
+async function startExternalWorker(
+  field: ValidField,
+  procName: string,
+): Promise<channelRegistry.IMessagePort> {
+  return {
+    postMessage(_msg: any, _transfer: any[]) {
+      // make http request
+    },
+    addEventListener(
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ): void {
+    },
+
+    dispatchEvent(event: Event): boolean {
+      // react to http requests done to this service
+      return true;
+    },
+
+    removeEventListener(
+      type: string,
+      callback: EventListenerOrEventListenerObject | null,
+      options?: EventListenerOptions | boolean,
+    ): void {},
+  };
+}
+
 async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
   const procsNames = _.uniq(
     Object
@@ -427,17 +461,24 @@ async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
   );
 
   const procs = new Map<string, Proc>();
-  const channels = openChannels(procsNames);
+
+  const procsForChannels = procsNames.filter((proc) =>
+    !field.procs?.[proc]?.cmd
+  );
+  const channels = openChannels(procsForChannels);
 
   for (const procName of procsNames) {
     let worker!: channelRegistry.IMessagePort;
+    const procConfig = field.procs[procName] ?? {};
 
     if (procName === "main") {
       worker = channelRegistry.createChannel(procName);
       await import(`./worker.ts?proc=${procName}`);
+    } else if (procConfig.cmd) {
+      worker = await startExternalWorker(field, procName);
     } else {
       worker = new Worker(
-        new URL(`./worker.ts?proc=${procName}`, import.meta.url),
+        new URL(`./worker.ts?proc=${procName}`, import.meta.url).toString(),
         { type: "module" },
       ) as any;
     }
@@ -445,6 +486,7 @@ async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
     procs.set(procName, {
       worker,
       procName,
+      ...procConfig,
       plants: Object.entries(field.plants)
         .filter(([, plantDef]: any) => plantDef.proc === procName)
         .map(([plantName, plantDef]) => ({

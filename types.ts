@@ -13,19 +13,29 @@ export type PlantDef = z.infer<typeof PlantDef>;
 export type HttpFunction = (app: Hono<any, any, any>) => void;
 export const HttpFunction: z.ZodType<HttpFunction> = z.any();
 
+export const ProcDef = z.object({
+  cwd: z.string(),
+  cmd: z.string().array(),
+});
+export type ProcDef = z.infer<typeof ProcDef>;
+
 export const Field = z.object({
   plants: z.record(PlantDef),
+  procs: z.record(ProcDef).optional(),
   http: HttpFunction.optional(),
 });
 export type Field = z.infer<typeof Field>;
 
 export type ValidField = {
   plants: Record<string, Required<PlantDef>>;
+  procs: Record<string, Required<ProcDef>>;
   http?: HttpFunction;
 };
 
 export type Proc = {
   worker: channelRegistry.IMessagePort;
+  cmd?: string;
+  cwd?: string;
   procName: string;
   plants: {
     plantName: string;
