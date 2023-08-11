@@ -14,8 +14,16 @@ export const DependencyResolver = depsResolver;
 export {
   assertEquals,
   assertRejects,
-} from "https://deno.land/std@0.184.0/testing/asserts.ts";
-export * as log from "https://deno.land/std@0.184.0/log/mod.ts";
+} from "https://deno.land/std@0.198.0/assert/mod.ts";
+export * as log from "https://deno.land/std@0.198.0/log/mod.ts";
+export {
+  afterAll,
+  beforeAll,
+  describe,
+  it,
+} from "https://deno.land/std@0.198.0/testing/bdd.ts";
+import _dirname from "https://deno.land/x/dirname@1.1.2/mod.ts";
+export const dirname = _dirname;
 
 export function generateUUID() {
   return uuid.v1.generate().toString();

@@ -1,17 +1,17 @@
-import { assertEquals, assertRejects } from "./deps.ts";
-import { grow } from "./mod.ts";
-import { IPublisher, ISubscriber } from "./examples/queue/contract.ts";
+import { assertEquals } from "../deps.ts";
+import { grow } from "../mod.ts";
+import { IPublisher, ISubscriber } from "../examples/queue/contract.ts";
 
 Deno.test("queue", async (t) => {
   const crops = await grow({
     plants: {
       Publisher: {
         contracts: [IPublisher],
-        filePath: "./examples/queue/publisher.ts",
+        filePath: "../examples/queue/publisher.ts",
       },
       Subscriber: {
         contracts: [ISubscriber],
-        filePath: "./examples/queue/subscriber.ts",
+        filePath: "../examples/queue/subscriber.ts",
       },
     },
   });

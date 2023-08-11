@@ -1,17 +1,17 @@
-import { assertEquals, assertRejects } from "./deps.ts";
-import { grow } from "./mod.ts";
-import { IAccess, IManager } from "./examples/simple/contract.ts";
+import { assertEquals, assertRejects } from "../deps.ts";
+import { grow } from "../mod.ts";
+import { IAccess, IManager } from "../examples/simple/contract.ts";
 
 async function startGrow() {
   return await grow({
     plants: {
       Manager: {
         contracts: [IManager],
-        filePath: "./examples/simple/manager.ts",
+        filePath: "../examples/simple/manager.ts",
       },
       Access: {
         contracts: [IAccess],
-        filePath: "./examples/simple/access.ts",
+        filePath: "../examples/simple/access.ts",
         config: {
           url: "OK",
         },

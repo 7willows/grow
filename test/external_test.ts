@@ -1,26 +1,25 @@
-import { assertEquals } from "./deps.ts";
-import {
-  IExternalOne,
-  IExternalTwo,
-  IInternal,
-} from "./examples/external/contracts.ts";
-import { grow } from "./mod.ts";
+import { IExternalOne, IExternalTwo, IInternal } from "./external/contracts.ts";
+import { grow } from "../mod.ts";
 import {
   afterAll,
+  assertEquals,
   beforeAll,
   describe,
+  dirname,
   it,
-} from "https://deno.land/std@0.184.0/testing/bdd.ts";
+} from "../deps.ts";
 
 describe("external", () => {
   let crops: any;
   let externalTwo!: IExternalTwo;
 
   beforeAll(async () => {
+    const dir = dirname(import.meta).__dirname;
+
     crops = await grow({
       procs: {
         external: {
-          cwd: "./examples/external",
+          cwd: dir + "/external",
           cmd: [
             "node",
             "wrapper.js",
@@ -30,7 +29,7 @@ describe("external", () => {
       plants: {
         Internal: {
           contracts: [IInternal],
-          filePath: "./examples/external/internal.ts",
+          filePath: "./external/internal.ts",
         },
         ExternalOne: {
           contracts: [IExternalOne],
