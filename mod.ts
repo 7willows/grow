@@ -1,21 +1,24 @@
-import { _, existsSync, log, match, P, path, z } from "./deps.ts";
+import { _, existsSync, generateUUID, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import {
   CallMethod,
   Field,
+  IWorkerCommunication,
   MsgFromWorker,
   PlantDef,
   Proc,
+  ProcDef,
   ValidField,
 } from "./types.ts";
 import { getLogger } from "./logger.ts";
 export { getLogger } from "./logger.ts";
 export type { Logger } from "./logger.ts";
 import * as channelRegistry from "./channel_registry.ts";
-
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 import { Queues } from "./queues.ts";
 import { Send, SendAck } from "./types.ts";
+import { ExternalWorker } from "./external_worker.ts";
+import { HttpComm } from "./http_comm.ts";
 
 export * from "./decorators.ts";
 
@@ -28,7 +31,7 @@ export type Crops = Awaited<ReturnType<typeof grow>>;
 function caller() {
   const err = new Error();
   let stack = err.stack?.split("\n")[3] ?? "";
-  stack = stack.substr(stack.indexOf("at ") + 3);
+  stack = stack.slice(stack.indexOf("at ") + 3);
   const path = stack.split(":");
   return path.slice(0, -2).join(":");
 }
@@ -42,8 +45,35 @@ function dirExists(dir: string): boolean {
   }
 }
 
+function generateLocalUrl(
+  portRange: { min: number; max: number } = { min: 37000, max: 37900 },
+): string {
+  for (let i = 0; i < 50; i += 1) {
+    const port = _.random(portRange.min, portRange.max, false);
+
+    if (isPortAvailable(port)) {
+      return `http://localhost:${port}`;
+    }
+  }
+
+  log.error("no available port could be found");
+  throw new Error("No available port could be found");
+}
+
+function isPortAvailable(port: number) {
+  try {
+    const listener = Deno.listen({ port });
+    listener.close();
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
 function validateField(field: Field, servicesDir: string): ValidField {
   field = Field.parse(field);
+
+  const procs: string[] = [];
 
   Object.keys(field.plants).forEach((plantName) => {
     const plant = field.plants[plantName];
@@ -61,7 +91,32 @@ function validateField(field: Field, servicesDir: string): ValidField {
 
     plant.config = plant.config ?? {};
     plant.http = !!plant.http;
+
+    procs.push(plant.proc ?? plantName);
   });
+
+  field.procs = field.procs ?? {};
+
+  for (const procName of procs) {
+    const procCfg: ProcDef | undefined = field.procs[procName];
+    const cwd: string = procCfg?.cwd ?? Deno.cwd();
+    const url: string = procCfg?.url ? procCfg.url : generateLocalUrl();
+
+    field.procs[procName] = {
+      cwd,
+      url,
+      cmd: procCfg?.cmd,
+    };
+  }
+
+  field.procs.main = {
+    cwd: Deno.cwd(),
+    url: generateLocalUrl(),
+  };
+
+  if (!field.communicationSecret) {
+    field.communicationSecret = generateUUID();
+  }
 
   return field as ValidField;
 }
@@ -85,17 +140,16 @@ export async function grow(rawField: Field) {
   }
 
   const field = validateField(rawField, servicesDir);
-
   const initializedIndicator = new Map<string, Deferred<any>>();
-
   const procsNames = getProcsNames(field);
 
   for (const procName of procsNames) {
     initializedIndicator.set(procName, defer());
   }
 
-  const procs = await createProcs(field as ValidField);
-
+  const mainPort = parseInt(new URL(field.procs["main"]?.url ?? "").port, 10);
+  const msgr = new HttpComm(field, mainPort);
+  const procs = await createProcs(field as ValidField, msgr);
   const queues = new Queues(
     getLogger({ name: "queues:main", sessionId: "", requestId: "" }),
     function (send: Send) {
@@ -128,7 +182,7 @@ export async function grow(rawField: Field) {
   }
 
   return {
-    kill: () => stop(field, procs),
+    kill: () => stop(field, procs, msgr),
     plant<T>(
       plantName: string,
       sessionId?: string,
@@ -142,7 +196,7 @@ export async function grow(rawField: Field) {
                 queues,
                 plantName,
                 sessionId: sessionId ?? "",
-                requestId: crypto.randomUUID(),
+                requestId: generateUUID(),
                 args,
               });
               return;
@@ -150,7 +204,7 @@ export async function grow(rawField: Field) {
 
             const r = await callMethod({
               sessionId: sessionId ?? "",
-              requestId: crypto.randomUUID(),
+              requestId: generateUUID(),
               plantName,
               methodName,
               args,
@@ -175,7 +229,7 @@ export async function grow(rawField: Field) {
             queues,
             plantName,
             sessionId: sessionId ?? "",
-            requestId: crypto.randomUUID(),
+            requestId: generateUUID(),
             args,
           });
         },
@@ -196,25 +250,30 @@ function handleErrors(
   });
 }
 
-function stop(field: ValidField, procs: Map<string, Proc>) {
+function stop(
+  field: ValidField,
+  procs: Map<string, Proc>,
+  msgr: IWorkerCommunication,
+) {
   const procsNames = getProcsNames(field);
 
   for (const procName of procsNames) {
     const proc = procs.get(procName)!;
     const worker = proc.worker;
 
-    if (worker instanceof Worker) {
+    if (worker instanceof Worker || worker instanceof ExternalWorker) {
       worker.terminate();
     }
   }
   calls = new Map();
+  msgr.close();
 }
 
 function findContracts(
   procs: Map<string, Proc>,
   plantName: string,
 ): z.ZodObject<any, any, any, any, any>[] {
-  const findResult = Array.from(procs).find(([procName, proc]) => {
+  const findResult = Array.from(procs).find(([_procName, proc]) => {
     return proc.plants.find((plant) => plant.plantName === plantName);
   });
 
@@ -284,7 +343,7 @@ function ensureValidArgs(cfg: {
 const callMethod: CallMethod = (cfg) => {
   cfg.args = ensureValidArgs(cfg);
 
-  const callId = crypto.randomUUID();
+  const callId = generateUUID();
   const deferred = defer();
   calls.set(callId, deferred);
 
@@ -327,13 +386,11 @@ function do$send(cfg: {
   requestId: string;
   args: any[];
 }): void {
-  const proc = getProc(cfg.procs, cfg.plantName);
-
   cfg.queues.enqueue({
     args: cfg.args,
     caller: "###MAIN",
     receiver: cfg.plantName,
-    sendId: crypto.randomUUID(),
+    sendId: generateUUID(),
     sessionId: cfg.sessionId,
     requestId: cfg.requestId,
   });
@@ -349,23 +406,27 @@ function procCommunication(
   const proc = procs.get(procName)!;
 
   proc.worker.addEventListener("message", (event: any) => {
-    match<MsgFromWorker, void>(event.data)
-      .with({ ready: true }, () => {
-        const config: { [plantName: string]: any } = {};
+    match<MsgFromWorker, void>(event.data).with({ ready: true }, () => {
+      const config: { [plantName: string]: any } = {};
+      for (const p of proc.plants) {
+        config[p.plantName] = p.plantDef.config ?? {};
+      }
 
-        for (const p of proc.plants) {
-          config[p.plantName] = p.plantDef.config ?? {};
-        }
-
-        proc.worker.postMessage({
+      proc.worker.postMessage(
+        {
           init: {
             field: getTransferableField(field),
             proc: procName,
-            portNames: Array.from(proc.procsPorts).map(([name]) => name),
+            portNames: Array.from(proc.procsPorts ?? { length: 0 })
+              .map((
+                [name],
+              ) => name),
             config,
           },
-        }, Array.from(proc.procsPorts).map(([, port]) => port));
-      })
+        },
+        Array.from(proc.procsPorts ?? { length: 0 }).map(([, port]) => port),
+      );
+    })
       .with({ initComplete: true }, () => {
         onInitComplete();
       })
@@ -425,35 +486,10 @@ function determineServicePath(
   throw new Error("Could not find service " + plantName);
 }
 
-async function startExternalWorker(
+async function createProcs(
   field: ValidField,
-  procName: string,
-): Promise<channelRegistry.IMessagePort> {
-  return {
-    postMessage(_msg: any, _transfer: any[]) {
-      // make http request
-    },
-    addEventListener(
-      type: string,
-      listener: EventListenerOrEventListenerObject | null,
-      options?: boolean | AddEventListenerOptions,
-    ): void {
-    },
-
-    dispatchEvent(event: Event): boolean {
-      // react to http requests done to this service
-      return true;
-    },
-
-    removeEventListener(
-      type: string,
-      callback: EventListenerOrEventListenerObject | null,
-      options?: EventListenerOptions | boolean,
-    ): void {},
-  };
-}
-
-async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
+  msgr: IWorkerCommunication,
+): Promise<Map<string, Proc>> {
   const procsNames = _.uniq(
     Object
       .entries(field.plants)
@@ -475,7 +511,7 @@ async function createProcs(field: ValidField): Promise<Map<string, Proc>> {
       worker = channelRegistry.createChannel(procName);
       await import(`./worker.ts?proc=${procName}`);
     } else if (procConfig.cmd) {
-      worker = await startExternalWorker(field, procName);
+      worker = new ExternalWorker(msgr, field, procName);
     } else {
       worker = new Worker(
         new URL(`./worker.ts?proc=${procName}`, import.meta.url).toString(),

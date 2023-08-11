@@ -14,12 +14,21 @@ export type HttpFunction = (app: Hono<any, any, any>) => void;
 export const HttpFunction: z.ZodType<HttpFunction> = z.any();
 
 export const ProcDef = z.object({
-  cwd: z.string(),
-  cmd: z.string().array(),
+  cwd: z.string().optional(),
+  cmd: z.string().array().optional(),
+  url: z.string().optional(),
 });
 export type ProcDef = z.infer<typeof ProcDef>;
 
+export const ValidProcDef = z.object({
+  cwd: z.string().optional(),
+  cmd: z.string().array().optional(),
+  url: z.string(),
+});
+export type ValidProcDef = z.infer<typeof ValidProcDef>;
+
 export const Field = z.object({
+  communicationSecret: z.string().optional(),
   plants: z.record(PlantDef),
   procs: z.record(ProcDef).optional(),
   http: HttpFunction.optional(),
@@ -27,14 +36,15 @@ export const Field = z.object({
 export type Field = z.infer<typeof Field>;
 
 export type ValidField = {
+  communicationSecret: string;
   plants: Record<string, Required<PlantDef>>;
-  procs: Record<string, Required<ProcDef>>;
+  procs: Record<string, ValidProcDef>;
   http?: HttpFunction;
 };
 
 export type Proc = {
   worker: channelRegistry.IMessagePort;
-  cmd?: string;
+  cmd?: string[];
   cwd?: string;
   procName: string;
   plants: {
@@ -100,6 +110,10 @@ export type MsgFromWorker =
   | { callResult: CallResult }
   | { sendAck: SendAck };
 
+export type MsgFromExternalWorker = MsgFromWorker & {
+  procName: string;
+};
+
 export type WorkerToWorkerMsg =
   | { call: Call; receiverPlant: string }
   | { callResult: CallResult; receiverPlant: string }
@@ -127,3 +141,16 @@ export type GrowClient = {
   ): void;
   dispatchEvent(event: any): void;
 };
+
+export interface ISubscription {
+  cancel(): void;
+}
+
+export interface IWorkerCommunication {
+  subscribe(
+    procName: string,
+    func: (msg: MsgFromExternalWorker) => void,
+  ): ISubscription;
+  sendMsg(procName: string, msg: MsgToWorker): Promise<void>;
+  close(): Promise<void>;
+}

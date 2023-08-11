@@ -1,4 +1,12 @@
-import { _, DependencyResolver, log, match, P, Reflect } from "./deps.ts";
+import {
+  _,
+  DependencyResolver,
+  generateUUID,
+  log,
+  match,
+  P,
+  Reflect,
+} from "./deps.ts";
 import { getLogger } from "./logger.ts";
 
 import type {
@@ -502,7 +510,7 @@ function buildQueueWrapper(plantName: string, targetService: string) {
         caller: plantName,
         receiver: targetService,
         args,
-        sendId: crypto.randomUUID(),
+        sendId: generateUUID(),
       });
       return;
     },
@@ -519,7 +527,7 @@ function buildProxy(plantName: string, targetService: string) {
       }
 
       return (...args: any[]) => {
-        const callId = crypto.randomUUID();
+        const callId = generateUUID();
         const growParams = (target as any)["###GROW"] ?? {};
 
         if (prop === "$send") {
