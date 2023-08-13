@@ -1,9 +1,9 @@
-module.exports = (root) => {
-  const externalTwo = root.proxy("ExternalTwo");
+module.exports = async (root) => {
+  const externalTwo = await root.proxy("ExternalTwo");
 
   return {
-    async callExternalTwo() {
-      return await externalTwo.returnOk();
+    async callExternalTwo(ctx) {
+      return await externalTwo.returnOk(ctx);
     },
   };
 };

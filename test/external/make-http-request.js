@@ -1,7 +1,7 @@
 const http = require("http");
 const https = require("https");
 
-module.exports = function makeHttpRequest(url, body) {
+module.exports = function makeHttpRequest(url, communicationSecret, body) {
   const postData = JSON.stringify(body);
   url = new URL(url);
   const options = {
@@ -12,6 +12,7 @@ module.exports = function makeHttpRequest(url, body) {
     headers: {
       "Content-Type": "application/json",
       "Content-Length": Buffer.byteLength(postData),
+      "communication-secret": communicationSecret,
     },
   };
   const protocol = url.protocol === "https:" ? https : http;

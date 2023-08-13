@@ -48,16 +48,22 @@ async function processInit(init) {
 
     const plant = require("./" + plantName);
 
-    plants[plantName] = await plant({
-      field,
-      proc,
-      plantName,
-      plantConfig,
-      proxy: makeProxy.bind(
-        null,
-        { field, communicationSecret, mainUrl },
-        plantName,
-      ),
+    plants[plantName] = new Promise((resolve) => {
+      setTimeout(() =>
+        resolve(
+          plant({
+            field,
+            proc,
+            plantName,
+            plantConfig,
+            proxy: makeProxy.bind(
+              null,
+              { field, communicationSecret, mainUrl },
+              plantName,
+            ),
+          }),
+        )
+      );
     });
   }
 
@@ -66,16 +72,16 @@ async function processInit(init) {
   };
 }
 
-function makeProxy(procCfg, caller, plantName) {
+async function makeProxy(procCfg, caller, plantName) {
   if (plants[plantName]) {
-    return plantName;
+    return await plants[plantName];
   }
 
-  return serviceProxy(procCfg, caller, plantName);
+  return await serviceProxy(procCfg, caller, plantName);
 }
 
 async function processCall(call) {
-  const plant = plants[call.receiver];
+  const plant = await plants[call.receiver];
 
   if (!plant) {
     logError(`Plant ${call.receiver} is not part of proc ${procName}`);
@@ -152,7 +158,8 @@ async function dispatchMessage(msg) {
 }
 
 function sendToMain(msg) {
-  return makeHttpRequest(`${mainUrl}/grow/msg`, msg);
+  const secret = field?.communicationSecret;
+  return makeHttpRequest(`${mainUrl}/grow/msg`, secret, msg);
 }
 
 const routes = {

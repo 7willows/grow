@@ -1,4 +1,4 @@
-const makeHttpReqest = require("./make-http-request");
+const makeHttpRequest = require("./make-http-request");
 
 exports.serviceProxy = function serviceProxy(procCfg, caller, serviceName) {
   const link = new ServiceLink(
@@ -9,6 +9,10 @@ exports.serviceProxy = function serviceProxy(procCfg, caller, serviceName) {
 
   return new Proxy({}, {
     get(target, prop) {
+      if (prop === "then") {
+        return target.then;
+      }
+
       return function (ctx, ...args) {
         return link.call({
           sessionId: ctx.sessionId,
@@ -37,29 +41,32 @@ class ServiceLink {
     method,
     args,
   }) {
-    this._validateCall(service, method, args);
+    this._validateCall(receiver, method, args);
     requestId = requestId || this._generateUniqueId();
     const callId = this._generateUniqueId();
     const body = {
-      caller,
-      sessionId,
-      requestId,
-      receiver,
-      method,
-      args,
-      callId,
+      call: {
+        caller,
+        sessionId,
+        requestId,
+        receiver,
+        method,
+        args,
+        callId,
+      },
     };
 
-    const url = this._findReceiverUrl(receiver);
-    const result = await this._makeHttpCall(url, body);
+    const url = this._findReceiverUrl(receiver) + "/grow/msg";
+    const secret = this._field.communicationSecret;
+    const result = await makeHttpRequest(url, secret, body);
 
     if (result.status !== 200) {
-      console.error(`calling ${service}.${method}() failed`, result);
+      console.error(`calling ${receiver}.${method}() failed`, result);
       throw new Error("invalid response from server");
     }
 
     if (!result.data.result) {
-      console.error(`invalid response from ${service}.${method}()`, result);
+      console.error(`invalid response from ${receiver}.${method}()`, result);
       throw new Error("invalid response from server");
     }
 

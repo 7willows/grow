@@ -12,6 +12,7 @@ import {
 describe("external", () => {
   let crops: any;
   let externalTwo!: IExternalTwo;
+  let externalOne!: IExternalOne;
 
   beforeAll(async () => {
     const dir = dirname(import.meta).__dirname;
@@ -19,6 +20,13 @@ describe("external", () => {
     crops = await grow({
       procs: {
         external: {
+          cwd: dir + "/external",
+          cmd: [
+            "node",
+            "wrapper.js",
+          ],
+        },
+        external2: {
           cwd: dir + "/external",
           cmd: [
             "node",
@@ -37,25 +45,26 @@ describe("external", () => {
         },
         ExternalTwo: {
           contracts: [IExternalTwo],
-          proc: "external",
+          proc: "external2",
         },
       },
     });
 
     externalTwo = crops.plant("ExternalTwo");
+    externalOne = crops.plant("ExternalOne");
   });
 
   afterAll(() => {
     crops?.kill();
   });
 
-  // const internal = crops.plant<IInternal>("Internal");
-  // const externalOne = crops.plant<IExternalOne>("ExternalOne");
   it("does basic call", async () => {
     const result = await externalTwo.returnOk();
     assertEquals(result, "ok");
   });
 
-  it("can call other services", async () => {
+  it.only("can call other services", async () => {
+    // const result = await externalOne.callExternalTwo();
+    // assertEquals(result, "ok");
   });
 });
