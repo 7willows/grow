@@ -52,10 +52,10 @@ describe("external", () => {
   // const internal = crops.plant<IInternal>("Internal");
   // const externalOne = crops.plant<IExternalOne>("ExternalOne");
   it("does basic call", async () => {
-    console.log("start--------------------");
-
     const result = await externalTwo.returnOk();
-    console.log("done");
     assertEquals(result, "ok");
+  });
+
+  it("can call other services", async () => {
   });
 });

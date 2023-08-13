@@ -1,5 +1,9 @@
 module.exports = (root) => ({
-  async returnOk() {
+  returnOk() {
     return "ok";
+  },
+
+  crash() {
+    process.exit(1);
   },
 });

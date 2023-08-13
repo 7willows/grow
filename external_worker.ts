@@ -3,13 +3,17 @@ import {
   ISubscription,
   IWorkerCommunication,
   MsgFromWorker,
+  MsgToWorker,
   ValidField,
 } from "./types.ts";
+
+import { getLogger, Logger } from "./logger.ts";
 
 export class ExternalWorker extends EventTarget implements IMessagePort {
   private commSubscription?: ISubscription;
   private process?: Deno.ChildProcess;
   private url?: string;
+  private log = getLogger({ name: "ExternalWorker" });
 
   constructor(
     private comm: IWorkerCommunication,
@@ -18,6 +22,7 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
   ) {
     super();
     this.onMsg = this.onMsg.bind(this);
+    this.commSubscription = this.comm.subscribe(this.procName, this.onMsg);
     this.start();
   }
 
@@ -29,7 +34,6 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
 
   // deno-lint-ignore require-await
   private async start(): Promise<void> {
-    this.commSubscription = this.comm.subscribe(this.procName, this.onMsg);
     const procConfig = this.field.procs[this.procName];
 
     if (!procConfig) {
@@ -50,6 +54,13 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
 
     this.process = command.spawn();
 
+    this.process.status.then((status) => {
+      if (status.code !== 0 && status.signal !== "SIGTERM") {
+        this.log.warning("restarting");
+        this.start();
+      }
+    });
+
     this.url = this.field.procs[this.procName]?.url;
   }
 
@@ -58,11 +69,33 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
     this.process?.kill();
   }
 
-  public postMessage(msg: any, _transfer: any[]) {
-    this.comm.sendMsg(this.procName, msg);
+  public postMessage(msg: MsgToWorker, transfer: any[]) {
+    this.comm.sendMsg(this.procName, msg)
+      .catch((err) => {
+        if (err.name === "TypeError") {
+          this.log.warning(err, "sending msg to worker failed");
 
-    if (!this.url) {
-      throw new Error("worker not initialized properly, url missng");
-    }
+          if ("call" in msg) {
+            this.onMsg({
+              callResult: {
+                type: "error",
+                receiver: msg.call.caller,
+                callId: msg.call.callId,
+                name: "crash",
+                message: "proc crashed",
+              },
+            });
+          }
+        }
+      });
+    //   .catch(async (err) => {
+    //   this.log.error(err, "calling external worker failed");
+    //
+    //   if (err.name === "TypeError") {
+    //     this.log.warning("service crashed, restarting");
+    //     await this.start();
+    //     return this.postMessage(msg, transfer);
+    //   }
+    // });
   }
 }

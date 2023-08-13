@@ -137,7 +137,9 @@ function processSend(send) {
 
 async function dispatchMessage(msg) {
   if (msg.init) {
-    return await processInit(msg.init);
+    // return await processInit(msg.init);
+    // initialization is done on boot
+    return { initComplete: true };
   } else if (msg.call) {
     return await processCall(msg.call);
   } else if (msg.callResult) {
@@ -234,3 +236,5 @@ server.listen(port, () => {
 });
 
 sendToMain({ ready: true, procName });
+
+processInit({});

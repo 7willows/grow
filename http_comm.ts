@@ -21,7 +21,6 @@ export class HttpComm implements IWorkerCommunication {
     this.onMsg = this.onMsg.bind(this);
     this.app = new Hono();
     this.app.post("/grow/msg", this.onMsg);
-    console.log("SERGVIng", { port });
 
     this.server = Deno.serve({
       port,
