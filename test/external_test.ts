@@ -13,6 +13,7 @@ describe("external", () => {
   let crops: any;
   let externalTwo!: IExternalTwo;
   let externalOne!: IExternalOne;
+  let internal!: IInternal;
 
   beforeAll(async () => {
     const dir = dirname(import.meta).__dirname;
@@ -52,6 +53,7 @@ describe("external", () => {
 
     externalTwo = crops.plant("ExternalTwo");
     externalOne = crops.plant("ExternalOne");
+    internal = crops.plant("Internal");
   });
 
   afterAll(() => {
@@ -63,8 +65,16 @@ describe("external", () => {
     assertEquals(result, "ok");
   });
 
-  it.only("can call other services", async () => {
-    // const result = await externalOne.callExternalTwo();
-    // assertEquals(result, "ok");
+  it("can call other services", async () => {
+    const result = await externalOne.callExternalTwo();
+    assertEquals(result, "ok");
+  });
+
+  it("can call internal service from an external one", async () => {
+    const result = await externalOne.callInternal();
+    assertEquals(result, "world");
+  });
+
+  it.skip("can call external service from internal", async () => {
   });
 });

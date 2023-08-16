@@ -1,5 +1,4 @@
-import { Server } from "https://deno.land/std@0.198.0/http/server.ts";
-import { Context, Hono, log, serve } from "./deps.ts";
+import { Context, Hono, log } from "./deps.ts";
 import { getLogger, Logger } from "./logger.ts";
 import {
   ISubscription,

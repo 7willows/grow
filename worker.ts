@@ -1,7 +1,9 @@
 import {
   _,
+  Context,
   DependencyResolver,
   generateUUID,
+  Hono,
   log,
   match,
   P,
@@ -21,6 +23,7 @@ import { defer, Deferred } from "./defer.ts";
 import * as channelRegistry from "./channel_registry.ts";
 import { SendAck } from "./types.ts";
 import { Queues } from "./queues.ts";
+import { HttpComm } from "./http_comm.ts";
 
 const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
@@ -38,7 +41,6 @@ const logger = getLogger({
 const me: channelRegistry.IMessagePort = proc === "main"
   ? channelRegistry.getPort(proc)!
   : (self as any as channelRegistry.IMessagePort);
-
 ports.set("###MAIN", me);
 
 const plants = new Map<string, any>();
@@ -142,10 +144,79 @@ async function init(cfg: {
   setupMsgHandlers();
 
   await callInit(resolver.sort());
+
+  httpListen(cfg.field, cfg.procName);
+}
+
+function httpListen(field: ValidField, procName: string): void {
+  const procConfig = field.procs[procName];
+
+  if (!procConfig) {
+    throw new Error("field.procs[" + procName + "] not found");
+  }
+  const port = parseInt(new URL(procConfig.url).port, 10);
+  logger.debug(procName + " listening on port " + port);
+
+  const app = new Hono();
+  app.post("/grow/msg", async (c: Context) => {
+    let data: any;
+
+    try {
+      data = await c.req.json();
+    } catch (err) {
+      log.error(err, "parsing request failed");
+      c.status(400);
+      return c.json({ error: "badRequest" });
+    }
+    if (!data.call) {
+      return c.json({ error: "unsupported call" });
+    }
+
+    const plant = plants.get(data.call.receiver);
+
+    if (!plant) {
+      logger.error(`plant ${data.call.receiver} not found`);
+
+      return c.json({
+        callResult: {
+          callId: data.call.callId,
+          receiver: data.call.caller,
+          type: "error",
+          name: "plantNotFound",
+          message: "Plant " + data.call.receiver + " not found",
+        },
+      });
+    }
+
+    try {
+      const result = await callMethod(plant, data.call);
+      return c.json({
+        callResult: {
+          type: "success",
+          result,
+          calLId: data.call.callId,
+          receiver: data.call.caller,
+        },
+      });
+    } catch (err) {
+      logger.error("Call failed", { data, err });
+      return c.json({
+        callResult: {
+          type: "error",
+          receiver: data.call.receiver,
+          callId: data.call.callId,
+          name: err.name,
+          message: err.message,
+        },
+      });
+    }
+  });
+
+  Deno.serve({ port }, app.fetch);
 }
 
 function setupMsgHandlers() {
-  plants.forEach((plant, plantName) => {
+  plants.forEach((plant, _plantName) => {
     const funcs = propsByMetadata("on", plant);
 
     plant[LISTENERS] = [];

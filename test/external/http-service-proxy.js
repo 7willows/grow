@@ -65,12 +65,12 @@ class ServiceLink {
       throw new Error("invalid response from server");
     }
 
-    if (!result.data.result) {
+    if (!result.data.callResult) {
       console.error(`invalid response from ${receiver}.${method}()`, result);
       throw new Error("invalid response from server");
     }
 
-    return result.data.result;
+    return result.data.callResult.result;
   }
 
   _findReceiverUrl(receiver) {
