@@ -23,7 +23,11 @@ import { defer, Deferred } from "./defer.ts";
 import * as channelRegistry from "./channel_registry.ts";
 import { SendAck } from "./types.ts";
 import { Queues } from "./queues.ts";
-import { HttpComm } from "./http_comm.ts";
+
+type Sys = {
+  field: ValidField;
+  proc: string;
+};
 
 const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
@@ -57,9 +61,13 @@ const queues = new Queues(
   },
 );
 
+let sys: Sys;
+
 me.addEventListener("message", (event: any) => {
   match(event.data as MsgToWorker)
     .with({ init: P.select() }, async (initMsg) => {
+      sys = { field: initMsg.field, proc: initMsg.proc };
+
       await init({
         field: initMsg.field,
         procName: initMsg.proc,
@@ -71,16 +79,26 @@ me.addEventListener("message", (event: any) => {
       me.postMessage({ initComplete: true });
     })
     .with({ call: P.select() }, (call: Call) => {
-      callPlant(call);
+      if (!sys) {
+        logger.error("system not initialized");
+        throw new Error("service not initialized");
+      }
+
+      callPlant(sys, call);
     })
     .with({ callResult: P.select() }, (result: CallResult) => {
       manageResult(result);
     })
     .with({ send: P.select() }, (send: Send) => {
+      if (!sys) {
+        logger.error("system not initialized");
+        throw new Error("service not initialized");
+      }
+
       const plant = plants.get(send.receiver);
 
       for (const listener of findListeners(send.receiver, send.args)) {
-        callMethod(plant, {
+        callMethod(sys, plant, {
           ...send,
           callId: send.sendId,
           method: listener,
@@ -90,6 +108,7 @@ me.addEventListener("message", (event: any) => {
       const port = ports.get(send.caller);
 
       if (!port) {
+        logger.error("no port for " + send.caller);
         throw new Error("no port for " + send.caller);
       }
 
@@ -114,6 +133,7 @@ async function init(cfg: {
   };
 }): Promise<void> {
   const resolver = new DependencyResolver();
+  const sys = { field: cfg.field, proc: cfg.procName };
 
   for (const [plantName] of Object.entries(cfg.field.plants)) {
     resolver.add(plantName);
@@ -129,13 +149,13 @@ async function init(cfg: {
     plants.set(plantName, plant);
 
     cfg.portNames.forEach((plantName, i) => {
-      listenOnPort(cfg.procPorts[i]);
+      listenOnPort(sys, cfg.procPorts[i]);
       ports.set(plantName, cfg.procPorts[i]);
     });
 
     plants.forEach((plant, plantName) => {
-      initInjectables(plantName, plant, resolver);
-      initQueues(plantName, plant);
+      initInjectables(sys, plantName, plant, resolver);
+      initQueues(sys, plantName, plant);
     });
   }
 
@@ -145,17 +165,19 @@ async function init(cfg: {
 
   await callInit(resolver.sort());
 
-  httpListen(cfg.field, cfg.procName);
+  if (sys.proc !== "main") {
+    httpListen({ field: cfg.field, proc: cfg.procName });
+  }
 }
 
-function httpListen(field: ValidField, procName: string): void {
-  const procConfig = field.procs[procName];
+function httpListen(sys: Sys): void {
+  const procConfig = sys.field.procs[sys.proc];
 
   if (!procConfig) {
-    throw new Error("field.procs[" + procName + "] not found");
+    throw new Error("field.procs[" + sys.proc + "] not found");
   }
   const port = parseInt(new URL(procConfig.url).port, 10);
-  logger.debug(procName + " listening on port " + port);
+  logger.debug(sys.proc + " listening on port " + port);
 
   const app = new Hono();
   app.post("/grow/msg", async (c: Context) => {
@@ -189,7 +211,7 @@ function httpListen(field: ValidField, procName: string): void {
     }
 
     try {
-      const result = await callMethod(plant, data.call);
+      const result = await callMethod(sys, plant, data.call);
       return c.json({
         callResult: {
           type: "success",
@@ -245,11 +267,11 @@ function assignLoggers() {
   });
 }
 
-function listenOnPort(port: MessagePort) {
+function listenOnPort(sys: Sys, port: MessagePort) {
   port.onmessage = (event: MessageEvent) => {
     match(event.data as WorkerToWorkerMsg)
       .with({ call: P.select() }, (call: Call) => {
-        callPlant(call);
+        callPlant(sys, call);
       })
       .with({ callResult: P.select() }, (result: CallResult) => {
         manageResult(result);
@@ -258,7 +280,7 @@ function listenOnPort(port: MessagePort) {
         const plant = plants.get(send.receiver);
 
         for (const listener of findListeners(send.receiver, send.args)) {
-          callMethod(plant, {
+          callMethod(sys, plant, {
             ...send,
             callId: send.sendId,
             method: listener,
@@ -328,7 +350,7 @@ function manageResult(result: CallResult) {
     .exhaustive();
 }
 
-async function callPlant(call: Call) {
+async function callPlant(sys: Sys, call: Call) {
   const port = ports.get(call.caller)!;
 
   if (!port) {
@@ -351,7 +373,7 @@ async function callPlant(call: Call) {
   }
 
   try {
-    const result = await callMethod(plant, call);
+    const result = await callMethod(sys, plant, call);
 
     port.postMessage({
       callResult: {
@@ -375,7 +397,7 @@ async function callPlant(call: Call) {
   }
 }
 
-async function callMethod(plant: any, call: Call): Promise<any> {
+async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
   const plantLogger = getLogger({
     name: `${call.receiver}.${call.method}()`,
     sessionId: call.sessionId,
@@ -393,7 +415,7 @@ async function callMethod(plant: any, call: Call): Promise<any> {
   let args = [...call.args];
 
   if (shouldInjectCaller) {
-    const callerProxy: any = buildProxy(call.receiver, call.caller);
+    const callerProxy: any = buildProxy(sys, call.receiver, call.caller);
     args = [callerProxy, ...args];
   }
 
@@ -474,7 +496,12 @@ function propsByMetadata(metadataKey: string, plant: any) {
   return props;
 }
 
-function initInjectables(plantName: string, plant: any, resolver: any) {
+function initInjectables(
+  sys: Sys,
+  plantName: string,
+  plant: any,
+  resolver: any,
+) {
   const toInject: string[] = [];
 
   for (const key of Object.keys(plant)) {
@@ -491,13 +518,13 @@ function initInjectables(plantName: string, plant: any, resolver: any) {
     resolver.setDependency(plantName, meta);
     toInject.push(meta);
 
-    plant[key] = buildProxy(plantName, meta);
+    plant[key] = buildProxy(sys, plantName, meta);
   }
 
   return toInject;
 }
 
-function initQueues(plantName: string, plant: any): void {
+function initQueues(sys: Sys, plantName: string, plant: any): void {
   for (const key of Object.keys(plant)) {
     let meta = Reflect.getMetadata("queue", plant, key);
 
@@ -509,7 +536,7 @@ function initQueues(plantName: string, plant: any): void {
       meta = key[0].toUpperCase() + key.slice(1);
     }
 
-    plant[key] = buildQueueWrapper(plantName, meta);
+    plant[key] = buildQueueWrapper(sys, plantName, meta);
   }
 }
 
@@ -522,11 +549,11 @@ type SendConfig = {
   sendId: string;
 };
 
-function sendToWorker(cfg: SendConfig) {
+function sendToWorker(sys: Sys, cfg: SendConfig) {
   if (plants.has(cfg.receiver)) {
     const plant = plants.get(cfg.receiver);
     for (const listener of findListeners(cfg.receiver, cfg.args)) {
-      callMethod(plant, {
+      callMethod(sys, plant, {
         ...cfg,
         callId: cfg.sendId,
         method: listener,
@@ -567,7 +594,7 @@ function matchListener(args: any[], matcher: any[]): boolean {
   return matcher.every((m, index) => m === args[index]);
 }
 
-function buildQueueWrapper(plantName: string, targetService: string) {
+function buildQueueWrapper(sys: Sys, plantName: string, targetService: string) {
   const wrapper = {
     get [IDENTITY]() {
       return wrapper;
@@ -575,7 +602,7 @@ function buildQueueWrapper(plantName: string, targetService: string) {
     $send(...args: any[]): void {
       const growParams = (wrapper as any)["###GROW"] ?? {};
 
-      sendToWorker({
+      sendToWorker(sys, {
         sessionId: growParams.sessionId,
         requestId: growParams.requestId,
         caller: plantName,
@@ -590,7 +617,11 @@ function buildQueueWrapper(plantName: string, targetService: string) {
   return wrapper;
 }
 
-function buildProxy(plantName: string, targetService: string) {
+function buildProxy(
+  sys: Sys,
+  plantName: string,
+  targetService: string,
+) {
   return new Proxy({}, {
     get: (target, prop) => {
       if (prop === IDENTITY) {
@@ -602,7 +633,7 @@ function buildProxy(plantName: string, targetService: string) {
         const growParams = (target as any)["###GROW"] ?? {};
 
         if (prop === "$send") {
-          return sendToWorker({
+          return sendToWorker(sys, {
             sessionId: growParams.sessionId,
             requestId: growParams.requestId,
             caller: plantName,
@@ -613,7 +644,7 @@ function buildProxy(plantName: string, targetService: string) {
         }
 
         if (plants.has(targetService)) {
-          return callMethod(plants.get(targetService)!, {
+          return callMethod(sys, plants.get(targetService)!, {
             sessionId: growParams.sessionId,
             requestId: growParams.requestId,
             caller: plantName,
@@ -624,32 +655,103 @@ function buildProxy(plantName: string, targetService: string) {
           });
         }
 
-        const deferred = defer();
-
-        calls.set(callId, deferred);
-
         const port = ports.get(targetService);
 
-        if (!port) {
-          throw new Error(`No port for ${targetService}`);
+        if (port) {
+          const deferred = defer();
+          calls.set(callId, deferred);
+
+          port.postMessage({
+            call: {
+              method: prop,
+              args,
+              caller: plantName,
+              receiver: targetService,
+              callId,
+              sessionId: growParams.sessionId,
+              requestId: growParams.requestId,
+            } as Call,
+          });
+
+          return deferred.promise;
         }
 
-        port.postMessage({
-          call: {
-            method: prop,
-            args,
-            caller: plantName,
-            receiver: targetService,
-            callId,
-            sessionId: growParams.sessionId,
-            requestId: growParams.requestId,
-          } as Call,
+        return callOverHttp(sys, {
+          method: prop as string,
+          sessionId: growParams.sessionId,
+          requestId: growParams.requestId,
+          caller: plantName,
+          receiver: targetService,
+          args,
+          callId,
         });
-
-        return deferred.promise;
       };
     },
   });
+}
+
+async function callOverHttp(sys: Sys, call: {
+  method: string;
+  sessionId: string;
+  requestId: string;
+  caller: string;
+  receiver: string;
+  args: any[];
+  callId: string;
+}): Promise<any> {
+  const procName = sys.field.plants[call.receiver]?.proc;
+  const url = sys.field.procs[procName]?.url;
+
+  if (!url) {
+    throw new Error(`No connection to ${call.receiver}`);
+  }
+
+  const result = await fetch(url + "/grow/msg", {
+    method: "POST",
+    headers: {
+      "communication-secret": sys.field.communicationSecret,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ call }),
+  }).catch((err: Error) => {
+    logger.error(`Calling ${call.receiver}.${call.method}() failed`, err);
+    throw new Error("http error");
+  });
+
+  const text = await result.text().catch((err: Error) => {
+    logger.error(
+      `reading response from ${call.receiver}.${call.method}() as text failed`,
+      err,
+    );
+    throw new Error("parse error");
+  });
+
+  if (result.status !== 200) {
+    logger.error(`calling ${call.receiver}.${call.method}() failed`, result);
+    throw new Error("invalid response from server");
+  }
+
+  let jsonResponse: any;
+  try {
+    jsonResponse = JSON.parse(text);
+  } catch (err) {
+    logger.error(text.slice(0, 1e4));
+    logger.error(
+      `parsing response from ${call.receiver}.${call.method}() as json failed`,
+      err,
+    );
+    throw new Error("parse error");
+  }
+
+  if (!jsonResponse.callResult) {
+    logger.error(
+      `invalid response from ${call.receiver}.${call.method}()`,
+      result,
+    );
+    throw new Error("invalid response from server");
+  }
+
+  return jsonResponse.callResult.result;
 }
 
 function updateConfig(config: { [plantName: string]: any }) {

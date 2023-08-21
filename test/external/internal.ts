@@ -1,8 +1,12 @@
-import { IInternal } from "./contracts.ts";
+import { inject } from "../../mod.ts";
+import { IExternalOne, IInternal } from "./contracts.ts";
 
 export class Internal implements IInternal {
+  @inject()
+  private externalOne!: IExternalOne;
+
   public async callExternalOne(): Promise<string> {
-    return "";
+    return await this.externalOne.foo();
   }
 
   public async callExternalTwoViaOne(): Promise<string> {

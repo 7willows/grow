@@ -75,6 +75,8 @@ describe("external", () => {
     assertEquals(result, "world");
   });
 
-  it.skip("can call external service from internal", async () => {
+  it("can call external service from internal", async () => {
+    const result = await internal.callExternalOne();
+    assertEquals(result, "bar");
   });
 });
