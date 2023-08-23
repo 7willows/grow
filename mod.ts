@@ -314,6 +314,11 @@ function ensureValidArgs(cfg: {
     throw new Error("Plant worker not found, proc: " + cfg.plantName);
   }
 
+  if (!contracts) {
+    // this service has not specified contracts, everything is allowed
+    return cfg.args;
+  }
+
   outer:
   for (const contract of contracts) {
     for (const [methodName, def] of Object.entries(contract.shape)) {

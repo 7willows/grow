@@ -710,7 +710,8 @@ async function callOverHttp(sys: Sys, call: {
     method: "POST",
     headers: {
       "communication-secret": sys.field.communicationSecret,
-      "content-type": "application/json",
+      "Content-Type": "application/json",
+      "Connection": "keep-alive",
     },
     body: JSON.stringify({ call }),
   }).catch((err: Error) => {

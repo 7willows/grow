@@ -73,6 +73,10 @@ function serveClient(app: Hono) {
   });
 }
 
+function toCamelCase(dashCase: string): string {
+  return dashCase.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+}
+
 function routes(cfg: {
   app: Hono;
   field: Field;
@@ -82,10 +86,29 @@ function routes(cfg: {
   for (const [plantName, plantDef] of Object.entries(cfg.field.plants)) {
     const plantNameDashCase = toDashCase(plantName);
 
+    if (!plantDef.http) {
+      continue;
+    }
+
+    if (!plantDef.contracts) {
+      const url = `/${plantNameDashCase}/:method`;
+
+      cfg.app.post(url, (c) => {
+        const { method } = c.req.param() as any;
+        const methodCamelCase = toCamelCase(method);
+
+        return handleRequest({
+          plantName,
+          methodName: methodCamelCase,
+          procs: cfg.procs,
+          callMethod: cfg.callMethod,
+        })(c);
+      });
+
+      continue;
+    }
+
     for (const contract of plantDef.contracts) {
-      if (!plantDef.http) {
-        continue;
-      }
       for (const [methodName] of Object.entries(contract.shape)) {
         const methodDashCase = toDashCase(methodName);
 

@@ -2,7 +2,7 @@ import { Hono, z } from "./deps.ts";
 import * as channelRegistry from "./channel_registry.ts";
 
 export const PlantDef = z.object({
-  contracts: z.array(z.any()),
+  contracts: z.array(z.any()).optional(),
   config: z.record(z.any()).optional(),
   http: z.boolean().optional(),
   filePath: z.string().optional(),
