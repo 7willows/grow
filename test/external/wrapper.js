@@ -244,8 +244,8 @@ const routes = {
 
   403: (_req, res) => sendJson(res, 403, { error: "forbidden" }),
   404: (_req, res) => sendJson(res, 404, { error: "not found" }),
-  400: (req, res) => sendJson(res, 400, { error: "bad request" }),
-  500: (req, res) => sendJson(res, 500, { error: "internal server error" }),
+  400: (_req, res) => sendJson(res, 400, { error: "bad request" }),
+  500: (_req, res) => sendJson(res, 500, { error: "internal server error" }),
 };
 
 function sendJson(res, status, json) {
