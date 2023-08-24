@@ -272,7 +272,7 @@ function stop(
 function findContracts(
   procs: Map<string, Proc>,
   plantName: string,
-): z.ZodObject<any, any, any, any, any>[] {
+): z.ZodObject<any, any, any, any, any>[] | undefined {
   const findResult = Array.from(procs).find(([_procName, proc]) => {
     return proc.plants.find((plant) => plant.plantName === plantName);
   });

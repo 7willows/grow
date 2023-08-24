@@ -2,6 +2,20 @@ const http = require("http");
 const makeHttpRequest = require("./make-http-request");
 const { serviceProxy } = require("./http-service-proxy.js");
 
+function deepGet(obj, path, defaultValue) {
+  const pathArray = Array.isArray(path) ? path : path.split(".");
+  let value = obj;
+
+  for (const key of pathArray) {
+    if (value === null || value === undefined) {
+      return defaultValue;
+    }
+    value = value[key];
+  }
+
+  return value !== undefined ? value : defaultValue;
+}
+
 const field = JSON.parse(process.env.FIELD ?? "{}");
 const procName = process.env.PROC_NAME;
 
@@ -39,32 +53,63 @@ if (!mainUrl) {
 
 let proc;
 const plants = {};
-
-async function processInit(init) {
+async function processInit(_init) {
   for (const [plantName, plantConfig] of Object.entries(field.plants)) {
     if (plantConfig.proc !== procName) {
       continue;
     }
 
-    const plant = require("./" + plantName);
+    // this trick is needed to fool esbuild-runner
+    const require2 = require;
+    let plant;
+    try {
+      plant = require2("./" + plantName);
+    } catch (err) {
+      console.error("require failed", err);
+      throw new Error("require failed");
+    }
 
-    plants[plantName] = new Promise((resolve) => {
-      setTimeout(() =>
-        resolve(
-          plant({
+    plants[plantName] = new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        const fn = typeof plant === "function" ? plant : plant.create;
+
+        try {
+          const mod = await fn({
             field,
             proc,
             plantName,
             plantConfig,
+            getConfig(v) {
+              return deepGet(plantConfig.config ?? {}, v);
+            },
             proxy: makeProxy.bind(
               null,
               { field, communicationSecret, mainUrl },
               plantName,
             ),
-          }),
-        )
-      );
+            broadcast(_ctx, _opts, _content) {
+            },
+          });
+          resolve(mod);
+        } catch (err) {
+          reject(err);
+        }
+      });
     });
+  }
+
+  for (const [plantName, plantConfig] of Object.entries(field.plants)) {
+    if (plantConfig.proc !== procName) {
+      continue;
+    }
+    const mod = await plants[plantName];
+    plants[plantName] = mod;
+
+    if (mod.__init) {
+      await mod.__init({
+        log: makeLogger({ func: "__init", plant: plantName }),
+      });
+    }
   }
 
   return {
@@ -78,6 +123,22 @@ async function makeProxy(procCfg, caller, plantName) {
   }
 
   return await serviceProxy(procCfg, caller, plantName);
+}
+
+function makeLogger(vals) {
+  return {
+    debug: (...args) => console.debug(...args, vals),
+    error: (...args) => console.error(...args, vals),
+    info: (...args) => console.info(...args, vals),
+    warn: (...args) => console.warn(...args, vals),
+    child(newVals) {
+      if (newVals.func) {
+        newVals.func = vals.func + "=>" + newVals.func;
+      }
+
+      return makeLogger({ ...vals, ...newVals });
+    },
+  };
 }
 
 async function processCall(call) {
@@ -112,6 +173,12 @@ async function processCall(call) {
   const ctx = {
     sessionId: call.sessionId,
     requestId: call.requestId,
+    log: makeLogger({
+      sessionId: call.sessionId,
+      requestId: call.requestId,
+      plant: call.receiver,
+      func: call.method,
+    }),
   };
 
   try {
@@ -130,15 +197,16 @@ async function processCall(call) {
         type: "error",
         receiver: call.receiver,
         callId: call.callId,
-        name: "notFound",
-        message: `call failed`,
+        name: err.name,
+        message: err.message,
       },
     };
   }
 }
 
-function processSend(send) {
+function processSend(_send) {
   // add a call to a queue
+  // for now "send" calls are not implemented
 }
 
 async function dispatchMessage(msg) {
@@ -174,8 +242,8 @@ const routes = {
     }
   },
 
-  403: (req, res) => sendJson(res, 403, { error: "forbidden" }),
-  404: (req, res) => sendJson(res, 404, { error: "not found" }),
+  403: (_req, res) => sendJson(res, 403, { error: "forbidden" }),
+  404: (_req, res) => sendJson(res, 404, { error: "not found" }),
   400: (req, res) => sendJson(res, 400, { error: "bad request" }),
   500: (req, res) => sendJson(res, 500, { error: "internal server error" }),
 };
