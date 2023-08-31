@@ -425,6 +425,7 @@ async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
     plantLogger.debug("success");
     return result;
   } catch (err) {
+    plantLogger.error("call", call);
     plantLogger.error("failure", err);
     throw err;
   }

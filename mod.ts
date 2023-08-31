@@ -189,6 +189,10 @@ export async function grow(rawField: Field) {
     ) {
       return new Proxy({}, {
         get: (_, methodName: string) => {
+          if (["then", "catch", "finall"].includes(methodName)) {
+            return undefined;
+          }
+
           return async (...args: any[]) => {
             if (methodName === "$send") {
               do$send({
