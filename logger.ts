@@ -10,7 +10,9 @@ export function getLogger(cfg: {
   requestId?: string;
   fields?: Record<string, any>;
 }) {
-  const logLevel = (Deno.env.get("GROW_LOG_LEVEL") ?? "DEBUG") as any;
+  const logLevel = (Deno.env.get("LOG_LEVEL") ??
+    Deno.env.get("GROW_LOG_LEVEL") ??
+    "DEBUG").toUpperCase() as any;
   const isPretty = Deno.env.get("GROW_LOG_PRETTY") === "true";
 
   function toString(obj: any) {
