@@ -62,6 +62,10 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
     });
 
     this.url = this.field.procs[this.procName]?.url;
+
+    globalThis.addEventListener("unload", () => {
+      this.terminate();
+    });
   }
 
   public terminate(): void {
