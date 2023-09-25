@@ -14,6 +14,7 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
   private process?: Deno.ChildProcess;
   private url?: string;
   private log = getLogger({ name: "ExternalWorker" });
+  private isTerminated = false;
 
   constructor(
     private comm: IWorkerCommunication,
@@ -55,22 +56,46 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
     this.process = command.spawn();
 
     this.process.status.then((status) => {
+      if (this.isTerminated) {
+        return;
+      }
+
       if (status.code !== 0 && status.signal !== "SIGTERM") {
         this.log.warning("restarting");
+        this.log.info("RESTARTING proc: " + this.procName);
         this.start();
       }
     });
 
     this.url = this.field.procs[this.procName]?.url;
 
+    Deno.addSignalListener("SIGINT", () => {
+      this.log.warning("SIGINIT received, terminating");
+      this.terminate();
+      Deno.exit("SIGTERM");
+    });
+
+    Deno.addSignalListener("SIGTERM", () => {
+      this.log.warning("SIGTERM received, terminating");
+      this.terminate();
+      Deno.exit("SIGTERM");
+    });
+
     globalThis.addEventListener("unload", () => {
+      this.log.warning("UNLOAD event, terminating");
       this.terminate();
     });
   }
 
   public terminate(): void {
+    if (this.process) {
+      this.log.warning("KILLING the process");
+      Deno.kill(this.process.pid);
+
+      this.process.kill("SIGKILL");
+    }
+    this.isTerminated = true;
     this.commSubscription?.cancel();
-    this.process?.kill();
   }
 
   public postMessage(msg: MsgToWorker, transfer: any[]) {
