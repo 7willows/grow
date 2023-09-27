@@ -52,7 +52,7 @@ function generateLocalUrl(
     const port = _.random(portRange.min, portRange.max, false);
 
     if (isPortAvailable(port)) {
-      return `http://localhost:${port}`;
+      return `http://0.0.0.0:${port}`;
     }
   }
 
