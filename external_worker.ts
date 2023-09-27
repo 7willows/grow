@@ -72,33 +72,40 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
     Deno.addSignalListener("SIGINT", () => {
       this.log.warning("SIGINIT received, terminating");
       this.terminate();
-      Deno.exit("SIGTERM");
+      Deno.exit(0);
     });
 
     Deno.addSignalListener("SIGTERM", () => {
       this.log.warning("SIGTERM received, terminating");
       this.terminate();
-      Deno.exit("SIGTERM");
+      Deno.exit(0);
     });
 
     globalThis.addEventListener("unload", () => {
       this.log.warning("UNLOAD event, terminating");
       this.terminate();
+
+      setTimeout(() => {
+        Deno.exit(0);
+      });
     });
   }
 
   public terminate(): void {
-    if (this.process) {
-      this.log.warning("KILLING the process");
-      Deno.kill(this.process.pid);
+    this.log.warning("KILLING the process");
 
+    this.postMessage({ kill: true }, []);
+
+    if (this.process) {
+      Deno.kill(this.process.pid);
       this.process.kill("SIGKILL");
     }
+
     this.isTerminated = true;
     this.commSubscription?.cancel();
   }
 
-  public postMessage(msg: MsgToWorker, transfer: any[]) {
+  public postMessage(msg: MsgToWorker, _transfer: any[]) {
     this.comm.sendMsg(this.procName, msg)
       .catch((err) => {
         if (err.name === "TypeError") {
@@ -117,14 +124,5 @@ export class ExternalWorker extends EventTarget implements IMessagePort {
           }
         }
       });
-    //   .catch(async (err) => {
-    //   this.log.error(err, "calling external worker failed");
-    //
-    //   if (err.name === "TypeError") {
-    //     this.log.warning("service crashed, restarting");
-    //     await this.start();
-    //     return this.postMessage(msg, transfer);
-    //   }
-    // });
   }
 }

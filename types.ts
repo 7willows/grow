@@ -102,7 +102,8 @@ export type MsgToWorker =
   }
   | { call: Call }
   | { callResult: CallResult }
-  | { send: Send };
+  | { send: Send }
+  | { kill: true };
 
 export type MsgFromWorker =
   | { ready: true }

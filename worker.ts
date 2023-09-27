@@ -89,6 +89,7 @@ me.addEventListener("message", (event: any) => {
     .with({ callResult: P.select() }, (result: CallResult) => {
       manageResult(result);
     })
+    .with({ kill: true }, () => {})
     .with({ send: P.select() }, (send: Send) => {
       if (!sys) {
         logger.error("system not initialized");
