@@ -793,7 +793,7 @@ async function callInit(plantsOrder: string[]) {
     const initFns = propsByMetadata("init", plant);
 
     for (const fn of initFns) {
-      await plant[fn]().catch((err: any) => {
+      await Promise.resolve(plant[fn]()).catch((err: any) => {
         logger.error("init failure [" + plantName + "]", err);
         throw new Error("initFailure");
       });
