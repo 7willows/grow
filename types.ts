@@ -17,6 +17,7 @@ export const ProcDef = z.object({
   cwd: z.string().optional(),
   cmd: z.string().array().optional(),
   url: z.string().optional(),
+  restartOnError: z.boolean().optional(),
 });
 export type ProcDef = z.infer<typeof ProcDef>;
 
@@ -24,6 +25,7 @@ export const ValidProcDef = z.object({
   cwd: z.string().optional(),
   cmd: z.string().array().optional(),
   url: z.string(),
+  restartOnError: z.boolean(),
 });
 export type ValidProcDef = z.infer<typeof ValidProcDef>;
 
@@ -109,7 +111,8 @@ export type MsgFromWorker =
   | { ready: true }
   | { initComplete: true }
   | { callResult: CallResult }
-  | { sendAck: SendAck };
+  | { sendAck: SendAck }
+  | { restartMe: true };
 
 export type MsgFromExternalWorker = MsgFromWorker & {
   procName: string;

@@ -106,6 +106,7 @@ function validateField(field: Field, servicesDir: string): ValidField {
       cwd,
       url,
       cmd: procCfg?.cmd,
+      restartOnError: !!procCfg?.restartOnError,
     };
   }
 
@@ -164,8 +165,15 @@ export async function grow(rawField: Field) {
   );
 
   procs.forEach((_proc, procName) => {
-    return procCommunication(procName, queues, procs, field, () => {
-      initializedIndicator.get(procName)!.resolve(null);
+    return procCommunication({
+      procName,
+      msgr,
+      queues,
+      procs,
+      field,
+      onInitComplete: () => {
+        initializedIndicator.get(procName)!.resolve(null);
+      },
     });
   });
 
@@ -240,6 +248,38 @@ export async function grow(rawField: Field) {
       };
     },
   };
+}
+
+function sendInit(
+  {
+    proc,
+    procName,
+    field,
+  }: {
+    proc: Proc;
+    procName: string;
+    field: ValidField;
+  },
+) {
+  const config: { [plantName: string]: any } = {};
+  for (const p of proc.plants) {
+    config[p.plantName] = p.plantDef.config ?? {};
+  }
+
+  proc.worker.postMessage(
+    {
+      init: {
+        field: getTransferableField(field),
+        proc: procName,
+        portNames: Array.from(proc.procsPorts ?? { length: 0 })
+          .map((
+            [name],
+          ) => name),
+        config,
+      },
+    },
+    Array.from(proc.procsPorts ?? { length: 0 }).map(([, port]) => port),
+  );
 }
 
 function handleErrors(
@@ -405,37 +445,28 @@ function do$send(cfg: {
   });
 }
 
-function procCommunication(
-  procName: string,
-  queues: Queues,
-  procs: Map<string, Proc>,
-  field: ValidField,
-  onInitComplete: () => void,
-): void {
+function procCommunication({
+  procName,
+  queues,
+  procs,
+  field,
+  msgr,
+  onInitComplete,
+}: {
+  procName: string;
+  queues: Queues;
+  procs: Map<string, Proc>;
+  field: ValidField;
+  msgr: IWorkerCommunication;
+  onInitComplete: () => void;
+}): void {
   const proc = procs.get(procName)!;
 
   proc.worker.addEventListener("message", (event: any) => {
-    match<MsgFromWorker, void>(event.data).with({ ready: true }, () => {
-      const config: { [plantName: string]: any } = {};
-      for (const p of proc.plants) {
-        config[p.plantName] = p.plantDef.config ?? {};
-      }
-
-      proc.worker.postMessage(
-        {
-          init: {
-            field: getTransferableField(field),
-            proc: procName,
-            portNames: Array.from(proc.procsPorts ?? { length: 0 })
-              .map((
-                [name],
-              ) => name),
-            config,
-          },
-        },
-        Array.from(proc.procsPorts ?? { length: 0 }).map(([, port]) => port),
-      );
-    })
+    match<MsgFromWorker, void>(event.data)
+      .with({ ready: true }, () => {
+        sendInit({ proc, procName, field });
+      })
       .with({ initComplete: true }, () => {
         onInitComplete();
       })
@@ -449,6 +480,45 @@ function procCommunication(
         }
 
         deferred.resolve(result);
+      })
+      .with({ restartMe: true }, () => {
+        console.log("REstarting", procName);
+        if (
+          proc.worker instanceof Worker ||
+          proc.worker instanceof ExternalWorker
+        ) {
+          proc.worker.terminate();
+        }
+
+        const procsNames = _.uniq(
+          Object
+            .entries(field.plants)
+            .map(([, plantDef]) => plantDef.proc),
+        );
+
+        const procsForChannels = procsNames.filter((proc) =>
+          !field.procs?.[proc]?.cmd
+        );
+
+        const channels = openChannels(procsForChannels);
+
+        createProc({ procs, field, msgr, channels, procName });
+
+        procs.forEach((proc, procNameIterator) => {
+          proc.procsPorts = channels.get(procNameIterator)!;
+          procCommunication({
+            procName: procNameIterator,
+            msgr,
+            queues,
+            procs,
+            field,
+            onInitComplete: () => {},
+          });
+
+          if (procName !== procNameIterator) {
+            sendInit({ proc, procName: procNameIterator, field });
+          }
+        });
       })
       .exhaustive();
   });
@@ -513,37 +583,60 @@ async function createProcs(
   const channels = openChannels(procsForChannels);
 
   for (const procName of procsNames) {
-    let worker!: channelRegistry.IMessagePort;
-    const procConfig = field.procs[procName] ?? {};
-
-    if (procName === "main") {
-      worker = channelRegistry.createChannel(procName);
-      await import(`./worker.ts?proc=${procName}`);
-    } else if (procConfig.cmd) {
-      worker = new ExternalWorker(msgr, field, procName);
-    } else {
-      worker = new Worker(
-        new URL(`./worker.ts?proc=${procName}`, import.meta.url).toString(),
-        { type: "module" },
-      ) as any;
-    }
-
-    procs.set(procName, {
-      worker,
+    createProc({
+      procs,
+      field,
+      msgr,
+      channels,
       procName,
-      ...procConfig,
-      plants: Object.entries(field.plants)
-        .filter(([, plantDef]: any) => plantDef.proc === procName)
-        .map(([plantName, plantDef]) => ({
-          plantName,
-          plantDef,
-        })),
-      procsPorts: channels.get(procName)!,
     });
   }
 
   return procs;
 }
+
+async function createProc({
+  procs,
+  field,
+  msgr,
+  channels,
+  procName,
+}: {
+  procs: Map<string, Proc>;
+  field: ValidField;
+  msgr: IWorkerCommunication;
+  channels: Map<string, Map<string, MessagePort>>;
+  procName: string;
+}) {
+  let worker!: channelRegistry.IMessagePort;
+  const procConfig = field.procs[procName] ?? {};
+
+  if (procName === "main") {
+    worker = channelRegistry.createChannel(procName);
+    await import(`./worker.ts?proc=${procName}`);
+  } else if (procConfig.cmd) {
+    worker = new ExternalWorker(msgr, field, procName);
+  } else {
+    worker = new Worker(
+      new URL(`./worker.ts?proc=${procName}`, import.meta.url).toString(),
+      { type: "module" },
+    ) as any;
+  }
+
+  procs.set(procName, {
+    worker,
+    procName,
+    ...procConfig,
+    plants: Object.entries(field.plants)
+      .filter(([, plantDef]: any) => plantDef.proc === procName)
+      .map(([plantName, plantDef]) => ({
+        plantName,
+        plantDef,
+      })),
+    procsPorts: channels.get(procName)!,
+  });
+}
+
 /**
  * Generate all possible combinations of ports
  */

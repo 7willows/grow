@@ -23,6 +23,7 @@ import { defer, Deferred } from "./defer.ts";
 import * as channelRegistry from "./channel_registry.ts";
 import { SendAck } from "./types.ts";
 import { Queues } from "./queues.ts";
+import { hasExternalProcs } from "./http_comm.ts";
 
 type Sys = {
   field: ValidField;
@@ -166,7 +167,7 @@ async function init(cfg: {
 
   await callInit(resolver.sort());
 
-  if (sys.proc !== "main") {
+  if (sys.proc !== "main" && hasExternalProcs(cfg.field)) {
     httpListen({ field: cfg.field, proc: cfg.procName });
   }
 }
@@ -385,6 +386,11 @@ async function callPlant(sys: Sys, call: Call) {
       },
     });
   } catch (err) {
+    if (sys.field.procs[sys.proc]?.restartOnError) {
+      setTimeout(() => {
+        me.postMessage({ restartMe: true });
+      }, 100);
+    }
     port.postMessage({
       callResult: {
         callId: call.callId,

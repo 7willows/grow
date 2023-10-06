@@ -7,6 +7,12 @@ import {
   ValidField,
 } from "./types.ts";
 
+export function hasExternalProcs(field: ValidField): boolean {
+  return Object.keys(field.procs).some((procName) => {
+    return field.procs[procName].cmd !== undefined;
+  });
+}
+
 export class HttpComm implements IWorkerCommunication {
   private app!: Hono;
   private subscriptions: {
@@ -17,6 +23,10 @@ export class HttpComm implements IWorkerCommunication {
   private server!: Deno.Server;
 
   constructor(private field: ValidField, port: number) {
+    if (!hasExternalProcs(field)) {
+      return new HttpCommPassThrough() as any;
+    }
+
     this.onMsg = this.onMsg.bind(this);
     this.app = new Hono();
     this.app.post("/grow/msg", this.onMsg);
@@ -92,5 +102,27 @@ export class HttpComm implements IWorkerCommunication {
       this.logger.error(err, "parsing failed");
       throw new Error("callFailed");
     }
+  }
+}
+
+export class HttpCommPassThrough implements IWorkerCommunication {
+  constructor() {
+  }
+
+  public close(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  public subscribe(
+    _procName: string,
+    _func: (msg: MsgFromExternalWorker) => void,
+  ): ISubscription {
+    return {
+      cancel: () => {},
+    };
+  }
+
+  public sendMsg(_procName: string, _msg: any): Promise<void> {
+    return Promise.resolve();
   }
 }
