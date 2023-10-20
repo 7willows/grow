@@ -102,6 +102,16 @@ export type MsgToWorker =
       };
     };
   }
+  | {
+    reinit: {
+      field: ValidField;
+      proc: string;
+      portNames: string[];
+      config: {
+        [plantName: string]: any;
+      };
+    };
+  }
   | { call: Call }
   | { callResult: CallResult }
   | { send: Send }

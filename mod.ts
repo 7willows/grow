@@ -250,6 +250,37 @@ export async function grow(rawField: Field) {
   };
 }
 
+function sendReInit(
+  {
+    proc,
+    procName,
+    field,
+  }: {
+    proc: Proc;
+    procName: string;
+    field: ValidField;
+  },
+) {
+  const config: { [plantName: string]: any } = {};
+  for (const p of proc.plants) {
+    config[p.plantName] = p.plantDef.config ?? {};
+  }
+
+  proc.worker.postMessage(
+    {
+      reinit: {
+        field: getTransferableField(field),
+        proc: procName,
+        portNames: Array.from(proc.procsPorts ?? { length: 0 })
+          .map((
+            [name],
+          ) => name),
+        config,
+      },
+    },
+    Array.from(proc.procsPorts ?? { length: 0 }).map(([, port]) => port),
+  );
+}
 function sendInit(
   {
     proc,
@@ -482,7 +513,7 @@ function procCommunication({
         deferred.resolve(result);
       })
       .with({ restartMe: true }, () => {
-        console.log("REstarting", procName);
+        console.log("Restarting", procName);
         if (
           proc.worker instanceof Worker ||
           proc.worker instanceof ExternalWorker
@@ -516,7 +547,7 @@ function procCommunication({
           });
 
           if (procName !== procNameIterator) {
-            sendInit({ proc, procName: procNameIterator, field });
+            sendReInit({ proc, procName: procNameIterator, field });
           }
         });
       })

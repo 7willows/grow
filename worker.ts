@@ -79,6 +79,17 @@ me.addEventListener("message", (event: any) => {
 
       me.postMessage({ initComplete: true });
     })
+    .with({ reinit: P.select() }, async (initMsg) => {
+      sys = { field: initMsg.field, proc: initMsg.proc };
+
+      await reinit({
+        field: initMsg.field,
+        procName: initMsg.proc,
+        portNames: initMsg.portNames,
+        procPorts: event.ports,
+        config: initMsg.config,
+      });
+    })
     .with({ call: P.select() }, (call: Call) => {
       if (!sys) {
         logger.error("system not initialized");
@@ -125,6 +136,44 @@ me.addEventListener("message", (event: any) => {
     .exhaustive();
 });
 
+async function reinit(cfg: {
+  field: ValidField;
+  procName: string;
+  portNames: string[];
+  procPorts: readonly MessagePort[];
+  config: {
+    [plantName: string]: any;
+  };
+}): Promise<void> {
+  const resolver = new DependencyResolver();
+  const sys = { field: cfg.field, proc: cfg.procName };
+
+  for (const [plantName] of Object.entries(cfg.field.plants)) {
+    resolver.add(plantName);
+  }
+
+  for (const [plantName, plantDef] of Object.entries(cfg.field.plants)) {
+    const plantProcName = plantDef.proc ?? plantName;
+    if (plantProcName !== cfg.procName) {
+      continue;
+    }
+
+    cfg.portNames.forEach((plantName, i) => {
+      listenOnPort(sys, cfg.procPorts[i]);
+      ports.set(plantName, cfg.procPorts[i]);
+    });
+  }
+
+  plants.forEach((plant, plantName) => {
+    initInjectables(sys, plantName, plant, resolver);
+    initQueues(sys, plantName, plant);
+  });
+
+  updateConfig(cfg.config);
+  assignLoggers();
+  setupMsgHandlers();
+}
+
 async function init(cfg: {
   field: ValidField;
   procName: string;
@@ -154,12 +203,12 @@ async function init(cfg: {
       listenOnPort(sys, cfg.procPorts[i]);
       ports.set(plantName, cfg.procPorts[i]);
     });
-
-    plants.forEach((plant, plantName) => {
-      initInjectables(sys, plantName, plant, resolver);
-      initQueues(sys, plantName, plant);
-    });
   }
+
+  plants.forEach((plant, plantName) => {
+    initInjectables(sys, plantName, plant, resolver);
+    initQueues(sys, plantName, plant);
+  });
 
   updateConfig(cfg.config);
   assignLoggers();
