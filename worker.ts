@@ -32,6 +32,11 @@ type Sys = {
 
 const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
+const caches: {
+  [serviceName: string]: {
+    [methodName: string]: Map<string, Promise<any>>;
+  };
+} = {};
 
 const IDENTITY = Symbol("proxy_target_identity");
 const LISTENERS = Symbol("listeners");
@@ -475,9 +480,42 @@ async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
     args = [callerProxy, ...args];
   }
 
+  const cacheMeta = Reflect.getMetadata("cache", plant, call.method);
+
+  let callFn = () => wrappedPlant[call.method](...args);
+
+  if (cacheMeta) {
+    const cacheKey = cacheMeta.cacheKey({
+      sessionId: call.sessionId,
+      requestId: call.requestId,
+      args: call.args,
+    });
+
+    if (!caches[call.receiver]) {
+      caches[call.receiver] = {};
+    }
+
+    if (!caches[call.receiver][call.method]) {
+      caches[call.receiver][call.method] = new Map();
+    }
+
+    callFn = () => {
+      if (caches[call.receiver][call.method].has(cacheKey)) {
+        return caches[call.receiver][call.method].get(cacheKey)!;
+      }
+
+      const result = wrappedPlant[call.method](...args);
+      caches[call.receiver][call.method].set(cacheKey, result);
+      setTimeout(() => {
+        caches[call.receiver][call.method].delete(cacheKey);
+      }, cacheMeta.ms);
+      return result;
+    };
+  }
+
   try {
     plantLogger.debug("started");
-    const result = await wrappedPlant[call.method](...args);
+    const result = await callFn();
     plantLogger.debug("success");
     return result;
   } catch (err) {

@@ -1,5 +1,18 @@
 import { Reflect } from "./deps.ts";
 
+export type CacheCtx = {
+  sessionId: string;
+  requestId: string;
+  args: any[];
+};
+
+export function cache(
+  ms: number,
+  cacheKey: (ctx: CacheCtx) => string,
+): PropertyDecorator {
+  return Reflect.metadata("cache", { ms, cacheKey });
+}
+
 export function config(cfgPath?: string): PropertyDecorator {
   return Reflect.metadata("config", cfgPath || "###DEDUCE");
 }
