@@ -79,6 +79,7 @@ export type Call = {
 export type Send = {
   args: any[];
   caller: string;
+  receiverProc: string;
   receiver: string;
   sendId: string;
   sessionId: string;

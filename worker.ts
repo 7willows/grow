@@ -57,7 +57,7 @@ const plants = new Map<string, any>();
 const queues = new Queues(
   getLogger({ name: "queues:" + proc, sessionId: "", requestId: "" }),
   function (send: Send): void {
-    const port = ports.get(send.receiver);
+    const port = ports.get(send.receiverProc);
 
     if (!port) {
       throw new Error("port to " + send.receiver + " not found");
@@ -123,7 +123,8 @@ me.addEventListener("message", (event: any) => {
         });
       }
 
-      const port = ports.get(send.caller);
+      const procName = sys.field.plants[send.caller]?.proc ?? send.caller;
+      const port = ports.get(procName);
 
       if (!port) {
         logger.error("no port for " + send.caller);
@@ -343,7 +344,8 @@ function listenOnPort(sys: Sys, port: MessagePort) {
           });
         }
 
-        const port = ports.get(send.caller);
+        const procName = sys.field.plants[send.caller]?.proc ?? send.caller;
+        const port = ports.get(procName);
 
         if (!port) {
           throw new Error("no port for " + send.caller);
@@ -407,7 +409,8 @@ function manageResult(result: CallResult) {
 }
 
 async function callPlant(sys: Sys, call: Call) {
-  const port = ports.get(call.caller)!;
+  const procName = sys.field.plants[call.caller]?.proc ?? call.caller;
+  const port = ports.get(procName)!;
 
   if (!port) {
     throw new Error(`No port for ${call.caller}`);
@@ -658,6 +661,7 @@ function sendToWorker(sys: Sys, cfg: SendConfig) {
     queues.enqueue({
       args: cfg.args,
       caller: cfg.caller,
+      receiverProc: sys.field.plants[cfg.receiver]?.proc ?? cfg.receiver,
       receiver: cfg.receiver,
       sendId: cfg.sendId,
       sessionId: cfg.sessionId,
@@ -750,7 +754,8 @@ function buildProxy(
           });
         }
 
-        const port = ports.get(targetService);
+        const procName = sys.field.plants[targetService]?.proc ?? targetService;
+        const port = ports.get(procName);
 
         if (port) {
           const deferred = defer();
