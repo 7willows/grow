@@ -207,6 +207,7 @@ export async function grow(rawField: Field) {
                 procs,
                 queues,
                 plantName,
+                procName: findPlantProcName(procs, plantName) ?? "",
                 sessionId: sessionId ?? "",
                 requestId: generateUUID(),
                 args,
@@ -240,6 +241,7 @@ export async function grow(rawField: Field) {
             procs,
             queues,
             plantName,
+            procName: findPlantProcName(procs, plantName) ?? "",
             sessionId: sessionId ?? "",
             requestId: generateUUID(),
             args,
@@ -461,6 +463,7 @@ function getProc(procs: Map<string, Proc>, plantName: string): Proc {
 function do$send(cfg: {
   procs: Map<string, Proc>;
   queues: Queues;
+  procName: string;
   plantName: string;
   sessionId: string;
   requestId: string;
@@ -469,11 +472,67 @@ function do$send(cfg: {
   cfg.queues.enqueue({
     args: cfg.args,
     caller: "###MAIN",
+    receiverProc: cfg.procName,
     receiver: cfg.plantName,
     sendId: generateUUID(),
     sessionId: cfg.sessionId,
     requestId: cfg.requestId,
   });
+}
+
+function restart({
+  procName,
+  proc,
+  procs,
+  field,
+  msgr,
+  queues,
+}: {
+  procName: string;
+  proc: Proc;
+  procs: Map<string, Proc>;
+  field: ValidField;
+  msgr: IWorkerCommunication;
+  queues: Queues;
+}) {
+  setTimeout(() => {
+    if (
+      proc.worker instanceof Worker ||
+      proc.worker instanceof ExternalWorker
+    ) {
+      proc.worker.terminate();
+    }
+
+    const procsNames = _.uniq(
+      Object
+        .entries(field.plants)
+        .map(([, plantDef]) => plantDef.proc),
+    );
+
+    const procsForChannels = procsNames.filter((proc) =>
+      !field.procs?.[proc]?.cmd
+    );
+
+    const channels = openChannels(procsForChannels);
+
+    createProc({ procs, field, msgr, channels, procName });
+
+    procs.forEach((proc, procNameIterator) => {
+      proc.procsPorts = channels.get(procNameIterator)!;
+      procCommunication({
+        procName: procNameIterator,
+        msgr,
+        queues,
+        procs,
+        field,
+        onInitComplete: () => {},
+      });
+
+      if (procName !== procNameIterator) {
+        sendReInit({ proc, procName: procNameIterator, field });
+      }
+    });
+  }, 1000);
 }
 
 function procCommunication({
@@ -492,6 +551,19 @@ function procCommunication({
   onInitComplete: () => void;
 }): void {
   const proc = procs.get(procName)!;
+
+  if (proc.worker instanceof Worker) {
+    proc.worker.onerror = (_event: any) => {
+      return restart({
+        procName,
+        proc,
+        procs,
+        field,
+        msgr,
+        queues,
+      });
+    };
+  }
 
   proc.worker.addEventListener("message", (event: any) => {
     match<MsgFromWorker, void>(event.data)
@@ -513,42 +585,13 @@ function procCommunication({
         deferred.resolve(result);
       })
       .with({ restartMe: true }, () => {
-        console.log("Restarting", procName);
-        if (
-          proc.worker instanceof Worker ||
-          proc.worker instanceof ExternalWorker
-        ) {
-          proc.worker.terminate();
-        }
-
-        const procsNames = _.uniq(
-          Object
-            .entries(field.plants)
-            .map(([, plantDef]) => plantDef.proc),
-        );
-
-        const procsForChannels = procsNames.filter((proc) =>
-          !field.procs?.[proc]?.cmd
-        );
-
-        const channels = openChannels(procsForChannels);
-
-        createProc({ procs, field, msgr, channels, procName });
-
-        procs.forEach((proc, procNameIterator) => {
-          proc.procsPorts = channels.get(procNameIterator)!;
-          procCommunication({
-            procName: procNameIterator,
-            msgr,
-            queues,
-            procs,
-            field,
-            onInitComplete: () => {},
-          });
-
-          if (procName !== procNameIterator) {
-            sendReInit({ proc, procName: procNameIterator, field });
-          }
+        return restart({
+          procName,
+          proc,
+          procs,
+          field,
+          msgr,
+          queues,
         });
       })
       .exhaustive();

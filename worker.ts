@@ -220,7 +220,10 @@ async function init(cfg: {
   assignLoggers();
   setupMsgHandlers();
 
-  await callInit(resolver.sort());
+  await callInit(resolver.sort()).catch((err: any) => {
+    console.error("init failed", err);
+    me.postMessage({ restartMe: true });
+  });
 
   if (sys.proc !== "main" && hasExternalProcs(cfg.field)) {
     httpListen({ field: cfg.field, proc: cfg.procName });
