@@ -657,7 +657,7 @@ async function createProcs(
   const channels = openChannels(procsForChannels);
 
   for (const procName of procsNames) {
-    createProc({
+    await createProc({
       procs,
       field,
       msgr,
@@ -665,7 +665,6 @@ async function createProcs(
       procName,
     });
   }
-
   return procs;
 }
 
