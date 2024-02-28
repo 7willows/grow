@@ -15,7 +15,6 @@ import * as nameService from "./services/name.ts";
 describe("main proc", () => {
   let services: Crops;
   let hello!: helloService.IHello;
-  let name!: nameService.IName;
 
   beforeAll(async () => {
     services = await grow({
@@ -34,7 +33,6 @@ describe("main proc", () => {
     });
 
     hello = services.plant("Hello");
-    name = services.plant("Name");
   });
 
   afterAll(() => {
