@@ -1,41 +1,42 @@
-import { Hono, z } from "./deps.ts";
+import { Hono } from "./deps.ts";
 import * as channelRegistry from "./channel_registry.ts";
 
-export const PlantDef = z.object({
-  contracts: z.array(z.any()).optional(),
-  config: z.record(z.any()).optional(),
-  http: z.boolean().optional(),
-  filePath: z.string().optional(),
-  proc: z.string().optional(),
-});
-export type PlantDef = z.infer<typeof PlantDef>;
+export type PlantDef = {
+  contracts?: any[];
+  config?: Record<string, any>;
+  http?: boolean;
+  filePath?: string;
+  proc?: string;
+};
 
 export type HttpFunction = (app: Hono<any, any, any>) => void;
-export const HttpFunction: z.ZodType<HttpFunction> = z.any();
 
-export const ProcDef = z.object({
-  cwd: z.string().optional(),
-  cmd: z.string().array().optional(),
-  url: z.string().optional(),
-  restartOnError: z.boolean().optional(),
-});
-export type ProcDef = z.infer<typeof ProcDef>;
+export type ProcDef = {
+  cwd?: string;
+  cmd?: string[];
+  url?: string;
+  restartOnError?: boolean;
+};
+export type ValidProcDef = {
+  cwd: string;
+  cmd: string[];
+  url: string;
+  restartOnError: boolean;
+};
 
-export const ValidProcDef = z.object({
-  cwd: z.string().optional(),
-  cmd: z.string().array().optional(),
-  url: z.string(),
-  restartOnError: z.boolean(),
-});
-export type ValidProcDef = z.infer<typeof ValidProcDef>;
+export type ValidPlantDef = {
+  cwd?: string;
+  cmd?: string[];
+  url?: string;
+  restartOnError?: boolean;
+};
 
-export const Field = z.object({
-  communicationSecret: z.string().optional(),
-  plants: z.record(PlantDef),
-  procs: z.record(ProcDef).optional(),
-  http: HttpFunction.optional(),
-});
-export type Field = z.infer<typeof Field>;
+export type Field = {
+  comunicationSecret?: string;
+  plants: Record<string, PlantDef>;
+  procs: Record<string, ProcDef>;
+  http?: HttpFunction;
+};
 
 export type ValidField = {
   communicationSecret: string;
