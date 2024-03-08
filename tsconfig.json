@@ -2,8 +2,9 @@
   "compilerOptions": {
     "allowJs": false,
     "esModuleInterop": true,
-    "experimentalDecorators": true,
     "inlineSourceMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "isolatedModules": true,
     "jsx": "react",
     "lib": [
