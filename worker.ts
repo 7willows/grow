@@ -7,9 +7,10 @@ import {
   log,
   match,
   P,
-  Reflect,
 } from "./deps.ts";
 import { getLogger } from "./logger.ts";
+
+import { Reflect } from "./reflect.ts";
 
 import type {
   Call,

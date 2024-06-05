@@ -1,4 +1,4 @@
-import { Reflect } from "./deps.ts";
+import { Reflect } from "./reflect.ts";
 
 export type CacheCtx = {
   sessionId: string;
@@ -9,42 +9,42 @@ export type CacheCtx = {
 export function cache(
   ms: number,
   cacheKey: (ctx: CacheCtx) => string,
-): PropertyDecorator {
+) {
   return Reflect.metadata("cache", { ms, cacheKey });
 }
 
-export function config(cfgPath?: string): PropertyDecorator {
+export function config(cfgPath?: string) {
   return Reflect.metadata("config", cfgPath || "###DEDUCE");
 }
 
-export function inject(serviceName?: string): PropertyDecorator {
+export function inject(serviceName?: string) {
   return Reflect.metadata("inject", serviceName || "###DEDUCE");
 }
 
-export function sessionId(): PropertyDecorator {
+export function sessionId() {
   return Reflect.metadata("sessionId", true);
 }
 
-export function requestId(): PropertyDecorator {
+export function requestId() {
   return Reflect.metadata("requestId", true);
 }
 
-export function logger(): PropertyDecorator {
+export function logger() {
   return Reflect.metadata("logger", true);
 }
 
-export function init(): MethodDecorator {
+export function init() {
   return Reflect.metadata("init", true);
 }
 
-export function caller(): MethodDecorator {
+export function caller() {
   return Reflect.metadata("caller", true);
 }
 
-export function on(...what: any[]): MethodDecorator {
+export function on(...what: any[]) {
   return Reflect.metadata("on", what);
 }
 
-export function queue(serviceName?: string): PropertyDecorator {
+export function queue(serviceName?: string) {
   return Reflect.metadata("queue", serviceName || "###DEDUCE");
 }
