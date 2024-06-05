@@ -1,31 +1,31 @@
 {
-  "compilerOptions": {
-    "allowJs": false,
-    "esModuleInterop": true,
-    "inlineSourceMap": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "isolatedModules": true,
-    "jsx": "react",
-    "lib": [
-      "deno.window",
-      "es2022",
-      "dom"
-    ],
-    "module": "esnext",
-    "moduleDetection": "force",
-    "strict": true,
-    "target": "esnext",
-    "useDefineForClassFields": true,
-    "plugins": [
-      {
-        "name": "typescript-deno-plugin",
-        "enable": true,
-        "importmap": "import_map.json"
-      }
+    "compilerOptions": {
+        "allowJs": false,
+        "esModuleInterop": true,
+        "inlineSourceMap": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "isolatedModules": true,
+        "jsx": "react",
+        "lib": [
+            "deno.window",
+            "es2022",
+            "dom"
+        ],
+        "module": "esnext",
+        "moduleDetection": "force",
+        "strict": true,
+        "target": "esnext",
+        "useDefineForClassFields": true,
+        "plugins": [
+            {
+                "name": "typescript-deno-plugin",
+                "enable": true,
+                "importmap": "import_map.json"
+            }
+        ]
+    },
+    "include": [
+        "/**/*"
     ]
-  },
-  "include": [
-    "/**/*"
-  ]
 }

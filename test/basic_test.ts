@@ -9,7 +9,7 @@ import {
 import * as helloService from "./services/hello.ts";
 import * as nameService from "./services/name.ts";
 
-describe("WorkflowAccess", () => {
+describe("Basic test", () => {
   let services: Crops;
   let hello!: helloService.IHello;
   let name!: nameService.IName;

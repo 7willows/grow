@@ -10,39 +10,30 @@ import {
   Reflect,
 } from "./deps.ts";
 import { getLogger } from "./logger.ts";
+import * as resources from "./worker_resources.ts";
 
 import type {
   Call,
   CallResult,
   MsgToWorker,
+  PlantDef,
   Send,
   ValidField,
   WorkerToWorkerMsg,
 } from "./types.ts";
-import { defer, Deferred } from "./defer.ts";
 import * as channelRegistry from "./channel_registry.ts";
 import { SendAck } from "./types.ts";
-import { Queues } from "./queues.ts";
 import { hasExternalProcs } from "./http_comm.ts";
-
-type Sys = {
-  field: ValidField;
-  proc: string;
-};
 
 const url = new URL(import.meta.url);
 const proc = url.searchParams.get("proc") ?? "";
+resources.init(proc);
 const caches: {
   [serviceName: string]: {
     [methodName: string]: Map<string, Promise<any>>;
   };
 } = {};
 
-const IDENTITY = Symbol("proxy_target_identity");
-const LISTENERS = Symbol("listeners");
-
-const calls = new Map<string, Deferred<any>>();
-const ports = new Map<string, channelRegistry.IMessagePort>();
 const logger = getLogger({
   name: `WORKER[${proc}]`,
   sessionId: "",
@@ -51,28 +42,15 @@ const logger = getLogger({
 const me: channelRegistry.IMessagePort = proc === "main"
   ? channelRegistry.getPort(proc)!
   : (self as any as channelRegistry.IMessagePort);
-ports.set("###MAIN", me);
 
-const plants = new Map<string, any>();
-const queues = new Queues(
-  getLogger({ name: "queues:" + proc, sessionId: "", requestId: "" }),
-  function (send: Send): void {
-    const port = ports.get(send.receiverProc);
-
-    if (!port) {
-      throw new Error("port to " + send.receiver + " not found");
-    }
-
-    port.postMessage({ send });
-  },
-);
-
-let sys: Sys;
+resources.ports.set("###MAIN", me);
 
 me.addEventListener("message", (event: any) => {
   match(event.data as MsgToWorker)
     .with({ init: P.select() }, async (initMsg) => {
-      sys = { field: initMsg.field, proc: initMsg.proc };
+      resources.setSys(
+        { field: initMsg.field, proc: initMsg.proc },
+      );
 
       await init({
         field: initMsg.field,
@@ -85,7 +63,9 @@ me.addEventListener("message", (event: any) => {
       me.postMessage({ initComplete: true });
     })
     .with({ reinit: P.select() }, async (initMsg) => {
-      sys = { field: initMsg.field, proc: initMsg.proc };
+      resources.setSys(
+        { field: initMsg.field, proc: initMsg.proc },
+      );
 
       await reinit({
         field: initMsg.field,
@@ -96,35 +76,38 @@ me.addEventListener("message", (event: any) => {
       });
     })
     .with({ call: P.select() }, (call: Call) => {
-      if (!sys) {
+      if (!resources.sys) {
         logger.error("system not initialized");
         throw new Error("service not initialized");
       }
 
-      callPlant(sys, call);
+      callPlant(call);
     })
     .with({ callResult: P.select() }, (result: CallResult) => {
       manageResult(result);
     })
     .with({ kill: true }, () => {})
     .with({ send: P.select() }, (send: Send) => {
-      if (!sys) {
+      if (!resources.sys) {
         logger.error("system not initialized");
         throw new Error("service not initialized");
       }
 
-      const plant = plants.get(send.receiver);
+      const plant = resources.plants.get(send.receiver);
 
-      for (const listener of findListeners(send.receiver, send.args)) {
-        callMethod(sys, plant, {
+      for (
+        const listener of resources.findListeners(send.receiver, send.args)
+      ) {
+        resources.callMethod(plant, {
           ...send,
           callId: send.sendId,
           method: listener,
         });
       }
 
-      const procName = sys.field.plants[send.caller]?.proc ?? send.caller;
-      const port = ports.get(procName);
+      const procName = resources.sys.field.plants[send.caller]?.proc ??
+        send.caller;
+      const port = resources.ports.get(procName);
 
       if (!port) {
         logger.error("no port for " + send.caller);
@@ -142,7 +125,7 @@ me.addEventListener("message", (event: any) => {
     .exhaustive();
 });
 
-async function reinit(cfg: {
+function reinit(cfg: {
   field: ValidField;
   procName: string;
   portNames: string[];
@@ -166,18 +149,19 @@ async function reinit(cfg: {
 
     cfg.portNames.forEach((plantName, i) => {
       listenOnPort(sys, cfg.procPorts[i]);
-      ports.set(plantName, cfg.procPorts[i]);
+      resources.ports.set(plantName, cfg.procPorts[i]);
     });
   }
 
-  plants.forEach((plant, plantName) => {
-    initInjectables(sys, plantName, plant, resolver);
-    initQueues(sys, plantName, plant);
+  resources.plants.forEach((plant: PlantDef, plantName: string) => {
+    initInjectables(plantName, plant, resolver);
+    initQueues(plantName, plant);
   });
 
   updateConfig(cfg.config);
   assignLoggers();
   setupMsgHandlers();
+  return Promise.resolve();
 }
 
 async function init(cfg: {
@@ -203,17 +187,17 @@ async function init(cfg: {
     }
 
     const plant = await initPlant(plantName, plantDef.filePath);
-    plants.set(plantName, plant);
+    resources.plants.set(plantName, plant);
 
     cfg.portNames.forEach((plantName, i) => {
       listenOnPort(sys, cfg.procPorts[i]);
-      ports.set(plantName, cfg.procPorts[i]);
+      resources.ports.set(plantName, cfg.procPorts[i]);
     });
   }
 
-  plants.forEach((plant, plantName) => {
-    initInjectables(sys, plantName, plant, resolver);
-    initQueues(sys, plantName, plant);
+  resources.plants.forEach((plant: PlantDef, plantName: string) => {
+    initInjectables(plantName, plant, resolver);
+    initQueues(plantName, plant);
   });
 
   updateConfig(cfg.config);
@@ -230,7 +214,7 @@ async function init(cfg: {
   }
 }
 
-function httpListen(sys: Sys): void {
+function httpListen(sys: resources.Sys): void {
   const procConfig = sys.field.procs[sys.proc];
 
   if (!procConfig) {
@@ -254,7 +238,7 @@ function httpListen(sys: Sys): void {
       return c.json({ error: "unsupported call" });
     }
 
-    const plant = plants.get(data.call.receiver);
+    const plant = resources.plants.get(data.call.receiver);
 
     if (!plant) {
       logger.error(`plant ${data.call.receiver} not found`);
@@ -271,7 +255,7 @@ function httpListen(sys: Sys): void {
     }
 
     try {
-      const result = await callMethod(sys, plant, data.call);
+      const result = await resources.callMethod(plant, data.call);
       return c.json({
         callResult: {
           type: "success",
@@ -298,14 +282,14 @@ function httpListen(sys: Sys): void {
 }
 
 function setupMsgHandlers() {
-  plants.forEach((plant, _plantName) => {
+  resources.plants.forEach((plant: any, _plantName: string) => {
     const funcs = propsByMetadata("on", plant);
 
-    plant[LISTENERS] = [];
+    plant[resources.LISTENERS] = [];
 
     for (const f of funcs) {
       const meta = Reflect.getMetadata("on", plant, f);
-      plant[LISTENERS].push({
+      plant[resources.LISTENERS].push({
         matcher: meta,
         method: f,
       });
@@ -314,7 +298,7 @@ function setupMsgHandlers() {
 }
 
 function assignLoggers() {
-  plants.forEach((plant, plantName) => {
+  resources.plants.forEach((plant: any, plantName: string) => {
     const loggers = propsByMetadata("logger", plant);
 
     for (const key of loggers) {
@@ -327,20 +311,22 @@ function assignLoggers() {
   });
 }
 
-function listenOnPort(sys: Sys, port: MessagePort) {
+function listenOnPort(sys: resources.Sys, port: MessagePort) {
   port.onmessage = (event: MessageEvent) => {
     match(event.data as WorkerToWorkerMsg)
       .with({ call: P.select() }, (call: Call) => {
-        callPlant(sys, call);
+        callPlant(call);
       })
       .with({ callResult: P.select() }, (result: CallResult) => {
         manageResult(result);
       })
       .with({ send: P.select() }, (send: Send) => {
-        const plant = plants.get(send.receiver);
+        const plant = resources.plants.get(send.receiver);
 
-        for (const listener of findListeners(send.receiver, send.args)) {
-          callMethod(sys, plant, {
+        for (
+          const listener of resources.findListeners(send.receiver, send.args)
+        ) {
+          resources.callMethod(plant, {
             ...send,
             callId: send.sendId,
             method: listener,
@@ -348,7 +334,7 @@ function listenOnPort(sys: Sys, port: MessagePort) {
         }
 
         const procName = sys.field.plants[send.caller]?.proc ?? send.caller;
-        const port = ports.get(procName);
+        const port = resources.ports.get(procName);
 
         if (!port) {
           throw new Error("no port for " + send.caller);
@@ -363,7 +349,7 @@ function listenOnPort(sys: Sys, port: MessagePort) {
         });
       })
       .with({ sendAck: P.select() }, (sendAck: SendAck) => {
-        queues.onAck(sendAck);
+        resources.queues.onAck(sendAck);
       })
       .exhaustive();
   };
@@ -387,13 +373,13 @@ setTimeout(() => {
 });
 
 function manageResult(result: CallResult) {
-  const deferred = calls.get(result.callId);
+  const deferred = resources.calls.get(result.callId);
 
   if (!deferred) {
     return;
   }
 
-  calls.delete(result.callId);
+  resources.calls.delete(result.callId);
 
   match(result)
     .with({ type: "success", result: P.select() }, (result) => {
@@ -411,14 +397,14 @@ function manageResult(result: CallResult) {
     .exhaustive();
 }
 
-async function callPlant(sys: Sys, call: Call) {
-  const procName = sys.field.plants[call.caller]?.proc ?? call.caller;
-  const port = ports.get(procName)!;
+async function callPlant(call: Call) {
+  const procName = resources.sys.field.plants[call.caller]?.proc ?? call.caller;
+  const port = resources.ports.get(procName)!;
 
   if (!port) {
     throw new Error(`No port for ${call.caller}`);
   }
-  const plant = plants.get(call.receiver);
+  const plant = resources.plants.get(call.receiver);
 
   if (!plant) {
     logger.error(`plant ${call.receiver} not found`);
@@ -434,8 +420,10 @@ async function callPlant(sys: Sys, call: Call) {
     });
   }
 
+  const sys = resources.sys;
+
   try {
-    const result = await callMethod(sys, plant, call);
+    const result = await resources.callMethod(plant, call);
 
     port.postMessage({
       callResult: {
@@ -464,122 +452,6 @@ async function callPlant(sys: Sys, call: Call) {
   }
 }
 
-async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
-  const plantLogger = getLogger({
-    name: `${call.receiver}.${call.method}()`,
-    sessionId: call.sessionId,
-    requestId: call.requestId,
-  });
-
-  const wrappedPlant = wrapPlant(plant, {
-    sessionId: call.sessionId,
-    logger: plantLogger,
-    requestId: call.requestId,
-  });
-
-  const shouldInjectCaller = Reflect.getMetadata("caller", plant, call.method);
-
-  let args = [...call.args];
-
-  if (shouldInjectCaller) {
-    const callerProxy: any = buildProxy(sys, call.receiver, call.caller);
-    args = [callerProxy, ...args];
-  }
-
-  const cacheMeta = Reflect.getMetadata("cache", plant, call.method);
-
-  let callFn = () => wrappedPlant[call.method](...args);
-
-  if (cacheMeta) {
-    const cacheKey = cacheMeta.cacheKey({
-      sessionId: call.sessionId,
-      requestId: call.requestId,
-      args: call.args,
-    });
-
-    if (!caches[call.receiver]) {
-      caches[call.receiver] = {};
-    }
-
-    if (!caches[call.receiver][call.method]) {
-      caches[call.receiver][call.method] = new Map();
-    }
-
-    callFn = () => {
-      if (caches[call.receiver][call.method].has(cacheKey)) {
-        return caches[call.receiver][call.method].get(cacheKey)!;
-      }
-
-      const result = wrappedPlant[call.method](...args);
-      caches[call.receiver][call.method].set(cacheKey, result);
-      setTimeout(() => {
-        caches[call.receiver][call.method].delete(cacheKey);
-      }, cacheMeta.ms);
-      return result;
-    };
-  }
-
-  try {
-    plantLogger.debug("started");
-    const result = await callFn();
-    plantLogger.debug("success");
-    return result;
-  } catch (err) {
-    plantLogger.error("call", { service: call.receiver, method: call.method });
-    plantLogger.error("failure", err);
-    throw err;
-  }
-}
-
-function wrapPlant<T extends Record<string, unknown>>(
-  plant: T,
-  cfg: { sessionId: string; logger: log.Logger; requestId: string },
-): T {
-  const sessionIds = propsByMetadata("sessionId", plant);
-  const loggers = propsByMetadata("logger", plant);
-  const requestIds = propsByMetadata("requestId", plant);
-  const injected = propsByMetadata("inject", plant);
-  const queued = propsByMetadata("queue", plant);
-
-  const wrapped = Object.create(plant);
-
-  for (const key of sessionIds) {
-    wrapped[key] = cfg.sessionId;
-  }
-
-  for (const key of loggers) {
-    wrapped[key] = cfg.logger;
-  }
-
-  for (const key of requestIds) {
-    wrapped[key] = cfg.requestId;
-  }
-
-  for (const key of injected) {
-    const inj = Object.create((plant as any)[key]);
-
-    inj[IDENTITY]["###GROW"] = {
-      sessionId: cfg.sessionId,
-      requestId: cfg.requestId,
-    };
-
-    wrapped[key] = inj;
-  }
-
-  for (const key of queued) {
-    const q = Object.create((plant as any)[key]);
-
-    q[IDENTITY]["###GROW"] = {
-      sessionId: cfg.sessionId,
-      requestId: cfg.requestId,
-    };
-
-    wrapped[key] = q;
-  }
-
-  return wrapped;
-}
-
 function propsByMetadata(metadataKey: string, plant: any) {
   const props = [];
   const keys = Object.getOwnPropertyNames(plant).concat(
@@ -598,7 +470,6 @@ function propsByMetadata(metadataKey: string, plant: any) {
 }
 
 function initInjectables(
-  sys: Sys,
   plantName: string,
   plant: any,
   resolver: any,
@@ -619,13 +490,13 @@ function initInjectables(
     resolver.setDependency(plantName, meta);
     toInject.push(meta);
 
-    plant[key] = buildProxy(sys, plantName, meta);
+    plant[key] = resources.buildProxy(plantName, meta);
   }
 
   return toInject;
 }
 
-function initQueues(sys: Sys, plantName: string, plant: any): void {
+function initQueues(plantName: string, plant: any): void {
   for (const key of Object.keys(plant)) {
     let meta = Reflect.getMetadata("queue", plant, key);
 
@@ -637,74 +508,22 @@ function initQueues(sys: Sys, plantName: string, plant: any): void {
       meta = key[0].toUpperCase() + key.slice(1);
     }
 
-    plant[key] = buildQueueWrapper(sys, plantName, meta);
+    plant[key] = buildQueueWrapper(plantName, meta);
   }
 }
 
-type SendConfig = {
-  receiver: string;
-  args: any[];
-  caller: string;
-  sessionId: string;
-  requestId: string;
-  sendId: string;
-};
-
-function sendToWorker(sys: Sys, cfg: SendConfig) {
-  if (plants.has(cfg.receiver)) {
-    const plant = plants.get(cfg.receiver);
-    for (const listener of findListeners(cfg.receiver, cfg.args)) {
-      callMethod(sys, plant, {
-        ...cfg,
-        callId: cfg.sendId,
-        method: listener,
-      });
-    }
-  } else {
-    queues.enqueue({
-      args: cfg.args,
-      caller: cfg.caller,
-      receiverProc: sys.field.plants[cfg.receiver]?.proc ?? cfg.receiver,
-      receiver: cfg.receiver,
-      sendId: cfg.sendId,
-      sessionId: cfg.sessionId,
-      requestId: cfg.requestId,
-    });
-  }
-}
-
-function findListeners(plantName: string, args: any[]): string[] {
-  const plant = plants.get(plantName);
-
-  if (!plant) {
-    logger.error("Plant " + plantName + " not found");
-    throw new Error("plant not found");
-  }
-
-  const funcs: string[] = [];
-
-  for (const l of plant[LISTENERS]) {
-    if (matchListener(args, l.matcher)) {
-      funcs.push(l.method);
-    }
-  }
-
-  return funcs;
-}
-
-function matchListener(args: any[], matcher: any[]): boolean {
-  return matcher.every((m, index) => m === args[index]);
-}
-
-function buildQueueWrapper(sys: Sys, plantName: string, targetService: string) {
+function buildQueueWrapper(
+  plantName: string,
+  targetService: string,
+) {
   const wrapper = {
-    get [IDENTITY]() {
+    get [resources.IDENTITY]() {
       return wrapper;
     },
     $send(...args: any[]): void {
       const growParams = (wrapper as any)["###GROW"] ?? {};
 
-      sendToWorker(sys, {
+      resources.sendToWorker({
         sessionId: growParams.sessionId,
         requestId: growParams.requestId,
         caller: plantName,
@@ -719,148 +538,9 @@ function buildQueueWrapper(sys: Sys, plantName: string, targetService: string) {
   return wrapper;
 }
 
-function buildProxy(
-  sys: Sys,
-  plantName: string,
-  targetService: string,
-) {
-  return new Proxy({}, {
-    get: (target, prop) => {
-      if (prop === IDENTITY) {
-        return target;
-      }
-
-      return (...args: any[]) => {
-        const callId = generateUUID();
-        const growParams = (target as any)["###GROW"] ?? {};
-
-        if (prop === "$send") {
-          return sendToWorker(sys, {
-            sessionId: growParams.sessionId,
-            requestId: growParams.requestId,
-            caller: plantName,
-            receiver: targetService,
-            args,
-            sendId: callId,
-          });
-        }
-
-        if (plants.has(targetService)) {
-          return callMethod(sys, plants.get(targetService)!, {
-            sessionId: growParams.sessionId,
-            requestId: growParams.requestId,
-            caller: plantName,
-            receiver: targetService,
-            method: prop as any,
-            args,
-            callId,
-          });
-        }
-
-        const procName = sys.field.plants[targetService]?.proc ?? targetService;
-        const port = ports.get(procName);
-
-        if (port) {
-          const deferred = defer();
-          calls.set(callId, deferred);
-
-          port.postMessage({
-            call: {
-              method: prop,
-              args,
-              caller: plantName,
-              receiver: targetService,
-              callId,
-              sessionId: growParams.sessionId,
-              requestId: growParams.requestId,
-            } as Call,
-          });
-
-          return deferred.promise;
-        }
-
-        return callOverHttp(sys, {
-          method: prop as string,
-          sessionId: growParams.sessionId,
-          requestId: growParams.requestId,
-          caller: plantName,
-          receiver: targetService,
-          args,
-          callId,
-        });
-      };
-    },
-  });
-}
-
-async function callOverHttp(sys: Sys, call: {
-  method: string;
-  sessionId: string;
-  requestId: string;
-  caller: string;
-  receiver: string;
-  args: any[];
-  callId: string;
-}): Promise<any> {
-  const procName = sys.field.plants[call.receiver]?.proc;
-  const url = sys.field.procs[procName]?.url;
-
-  if (!url) {
-    throw new Error(`No connection to ${call.receiver}`);
-  }
-
-  const result = await fetch(url + "/grow/msg", {
-    method: "POST",
-    headers: {
-      "communication-secret": sys.field.communicationSecret,
-      "Content-Type": "application/json",
-      "Connection": "keep-alive",
-    },
-    body: JSON.stringify({ call }),
-  }).catch((err: Error) => {
-    logger.error(`Calling ${call.receiver}.${call.method}() failed`, err);
-    throw new Error("http error");
-  });
-
-  const text = await result.text().catch((err: Error) => {
-    logger.error(
-      `reading response from ${call.receiver}.${call.method}() as text failed`,
-      err,
-    );
-    throw new Error("parse error");
-  });
-
-  if (result.status !== 200) {
-    logger.error(`calling ${call.receiver}.${call.method}() failed`, result);
-    throw new Error("invalid response from server");
-  }
-
-  let jsonResponse: any;
-  try {
-    jsonResponse = JSON.parse(text);
-  } catch (err) {
-    logger.error(text.slice(0, 1e4));
-    logger.error(
-      `parsing response from ${call.receiver}.${call.method}() as json failed`,
-      err,
-    );
-    throw new Error("parse error");
-  }
-
-  if (!jsonResponse.callResult) {
-    logger.error(
-      `invalid response from ${call.receiver}.${call.method}()`,
-      result,
-    );
-    throw new Error("invalid response from server");
-  }
-
-  return jsonResponse.callResult.result;
-}
-
 function updateConfig(config: { [plantName: string]: any }) {
   Object.keys(config).forEach((plantName) => {
-    const plant = plants.get(plantName);
+    const plant = resources.plants.get(plantName);
 
     if (!plant) {
       // it's ok, we get config for all plants and this one must be not ours
@@ -886,11 +566,11 @@ function updateConfig(config: { [plantName: string]: any }) {
 
 async function callInit(plantsOrder: string[]) {
   for (const plantName of plantsOrder) {
-    if (!plants.has(plantName)) {
+    if (!resources.plants.has(plantName)) {
       continue;
     }
 
-    const plant = plants.get(plantName);
+    const plant = resources.plants.get(plantName);
     const initFns = propsByMetadata("init", plant);
 
     for (const fn of initFns) {
