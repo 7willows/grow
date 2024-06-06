@@ -2,7 +2,7 @@ const stores = new Map<
   string, // decorator name
   Map<
     string | symbol, // field name
-    Map<any, any> // target object, metadata
+    Map<string, any> // target object class name, metadata
   >
 >();
 
@@ -25,13 +25,22 @@ function getStore(
 
 export class Reflect {
   public static metadata(decoratorName: string, metadata: any) {
-    return function fieldDecorator<C, V>(
-      _target: any,
-      ctx: ClassFieldDecoratorContext<C, V>,
+    return function decorator(
+      value: any,
+      ctx: any,
     ) {
       const store = getStore(decoratorName, ctx.name);
-      return function (this: any, _: V): any {
-        store.set(this, metadata);
+
+      if (typeof value === "function") {
+        ctx.addInitializer(function (this: any) {
+          store.set(this.constructor.name, metadata);
+        });
+
+        return value;
+      }
+
+      return function (this: any): any {
+        store.set(this.constructor.name, metadata);
         return null;
       };
     };
@@ -42,6 +51,6 @@ export class Reflect {
     target: any,
     field: string,
   ): any {
-    return getStore(decoratorName, field).get(target);
+    return getStore(decoratorName, field).get(target.constructor.name);
   }
 }

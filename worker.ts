@@ -281,7 +281,7 @@ function httpListen(sys: Sys): void {
           receiver: data.call.caller,
         },
       });
-    } catch (err) {
+    } catch (err: any) {
       logger.error("Call failed", { data, err });
       return c.json({
         callResult: {
@@ -317,6 +317,9 @@ function setupMsgHandlers() {
 function assignLoggers() {
   plants.forEach((plant, plantName) => {
     const loggers = propsByMetadata("logger", plant);
+    if (plantName === "FlowAccess") {
+      console.log("loggers", loggers);
+    }
 
     for (const key of loggers) {
       plant[key] = getLogger({
