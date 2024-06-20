@@ -149,6 +149,9 @@ function handleRequest(cfg: {
   callMethod: CallMethod;
 }) {
   return async (c: Context<any, any, any>) => {
+    if (!c.req.header("grow-request-id")) {
+      return c.json({ error: "Missing request id" }, 400);
+    }
     const args = (await c.req.json()) as any[];
 
     let result;
