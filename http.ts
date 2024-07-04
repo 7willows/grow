@@ -1,4 +1,4 @@
-import { Context, Hono, match, P, serve, StatusCode } from "./deps.ts";
+import { Context, Hono, match, P, StatusCode } from "./deps.ts";
 import { CallMethod, Field, Proc } from "./types.ts";
 
 export function isHttpEnabled(field: Field) {
@@ -35,7 +35,7 @@ export function startHttpServer(
     port = 8000;
   }
 
-  serve(app.fetch as any, { port });
+  Deno.serve({ port }, app.fetch as any);
 }
 
 async function tryFetch(
@@ -102,6 +102,7 @@ function routes(cfg: {
           methodName: methodCamelCase,
           procs: cfg.procs,
           callMethod: cfg.callMethod,
+          field: cfg.field,
         })(c);
       });
 
@@ -121,6 +122,7 @@ function routes(cfg: {
             methodName,
             procs: cfg.procs,
             callMethod: cfg.callMethod,
+            field: cfg.field,
           }),
         );
       }
@@ -147,21 +149,31 @@ function handleRequest(cfg: {
   methodName: string;
   procs: Map<string, Proc>;
   callMethod: CallMethod;
+  field: Field;
 }) {
   return async (c: Context<any, any, any>) => {
     const args = (await c.req.json()) as any[];
 
     let result;
+
+    const sessionId = c.req.header("grow-session-id") ?? "";
+    const requestId = c.req.header("grow-request-id") ?? "";
+    const ctx = {
+      sessionId,
+      requestId,
+      data: {},
+    };
     try {
       result = await cfg.callMethod({
         plantName: cfg.plantName,
         methodName: cfg.methodName,
         args,
         procs: cfg.procs,
-        sessionId: c.req.header("grow-session-id") ?? "",
-        requestId: c.req.header("grow-request-id") ?? "",
+        sessionId,
+        requestId,
+        ctx: cfg.field.initCtx?.(c, ctx as any) ?? ctx as any,
       });
-    } catch (err) {
+    } catch (err: any) {
       return c.json(err, errorToStatus(err));
     }
 

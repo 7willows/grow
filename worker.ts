@@ -15,9 +15,10 @@ import { Reflect } from "./reflect.ts";
 import type {
   Call,
   CallResult,
+  ClonedField,
+  Ctx,
   MsgToWorker,
   Send,
-  ValidField,
   WorkerToWorkerMsg,
 } from "./types.ts";
 import { defer, Deferred } from "./defer.ts";
@@ -26,8 +27,10 @@ import { SendAck } from "./types.ts";
 import { Queues } from "./queues.ts";
 import { hasExternalProcs } from "./http_comm.ts";
 
+declare type MessagePort = any;
+
 type Sys = {
-  field: ValidField;
+  field: ClonedField;
   proc: string;
 };
 
@@ -144,7 +147,7 @@ me.addEventListener("message", (event: any) => {
 });
 
 async function reinit(cfg: {
-  field: ValidField;
+  field: ClonedField;
   procName: string;
   portNames: string[];
   procPorts: readonly MessagePort[];
@@ -182,7 +185,7 @@ async function reinit(cfg: {
 }
 
 async function init(cfg: {
-  field: ValidField;
+  field: ClonedField;
   procName: string;
   portNames: string[];
   procPorts: readonly MessagePort[];
@@ -449,7 +452,7 @@ async function callPlant(sys: Sys, call: Call) {
         receiver: call.caller,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     if (sys.field.procs[sys.proc]?.restartOnError) {
       setTimeout(() => {
         me.postMessage({ restartMe: true });
@@ -468,7 +471,11 @@ async function callPlant(sys: Sys, call: Call) {
   }
 }
 
-async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
+async function callMethod(
+  sys: Sys,
+  plant: any,
+  call: Call,
+): Promise<any> {
   const plantLogger = getLogger({
     name: `${call.receiver}.${call.method}()`,
     sessionId: call.sessionId,
@@ -479,6 +486,7 @@ async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
     sessionId: call.sessionId,
     logger: plantLogger,
     requestId: call.requestId,
+    ctx: call.ctx,
   });
 
   const shouldInjectCaller = Reflect.getMetadata("caller", plant, call.method);
@@ -537,13 +545,14 @@ async function callMethod(sys: Sys, plant: any, call: Call): Promise<any> {
 
 function wrapPlant<T extends Record<string, unknown>>(
   plant: T,
-  cfg: { sessionId: string; logger: log.Logger; requestId: string },
+  cfg: { sessionId: string; logger: log.Logger; requestId: string; ctx: Ctx },
 ): T {
   const sessionIds = propsByMetadata("sessionId", plant);
   const loggers = propsByMetadata("logger", plant);
   const requestIds = propsByMetadata("requestId", plant);
   const injected = propsByMetadata("inject", plant);
   const queued = propsByMetadata("queue", plant);
+  const ctxs = propsByMetadata("ctx", plant);
 
   const wrapped = Object.create(plant);
 
@@ -559,12 +568,17 @@ function wrapPlant<T extends Record<string, unknown>>(
     wrapped[key] = cfg.requestId;
   }
 
+  for (const key of ctxs) {
+    wrapped[key] = cfg.ctx;
+  }
+
   for (const key of injected) {
     const inj = Object.create((plant as any)[key]);
 
     inj[IDENTITY]["###GROW"] = {
       sessionId: cfg.sessionId,
       requestId: cfg.requestId,
+      ctx: cfg.ctx,
     };
 
     wrapped[key] = inj;
@@ -576,6 +590,7 @@ function wrapPlant<T extends Record<string, unknown>>(
     q[IDENTITY]["###GROW"] = {
       sessionId: cfg.sessionId,
       requestId: cfg.requestId,
+      ctx: cfg.ctx,
     };
 
     wrapped[key] = q;
@@ -651,6 +666,7 @@ type SendConfig = {
   caller: string;
   sessionId: string;
   requestId: string;
+  ctx: Ctx;
   sendId: string;
 };
 
@@ -662,6 +678,7 @@ function sendToWorker(sys: Sys, cfg: SendConfig) {
         ...cfg,
         callId: cfg.sendId,
         method: listener,
+        ctx: cfg.ctx,
       });
     }
   } else {
@@ -673,6 +690,7 @@ function sendToWorker(sys: Sys, cfg: SendConfig) {
       sendId: cfg.sendId,
       sessionId: cfg.sessionId,
       requestId: cfg.requestId,
+      ctx: cfg.ctx,
     });
   }
 }
@@ -711,6 +729,7 @@ function buildQueueWrapper(sys: Sys, plantName: string, targetService: string) {
       sendToWorker(sys, {
         sessionId: growParams.sessionId,
         requestId: growParams.requestId,
+        ctx: growParams.ctx,
         caller: plantName,
         receiver: targetService,
         args,
@@ -739,26 +758,35 @@ function buildProxy(
         const growParams = (target as any)["###GROW"] ?? {};
 
         if (prop === "$send") {
-          return sendToWorker(sys, {
-            sessionId: growParams.sessionId,
-            requestId: growParams.requestId,
-            caller: plantName,
-            receiver: targetService,
-            args,
-            sendId: callId,
-          });
+          return sendToWorker(
+            sys,
+            {
+              sessionId: growParams.sessionId,
+              requestId: growParams.requestId,
+              ctx: growParams.ctx,
+              caller: plantName,
+              receiver: targetService,
+              args,
+              sendId: callId,
+            },
+          );
         }
 
         if (plants.has(targetService)) {
-          return callMethod(sys, plants.get(targetService)!, {
-            sessionId: growParams.sessionId,
-            requestId: growParams.requestId,
-            caller: plantName,
-            receiver: targetService,
-            method: prop as any,
-            args,
-            callId,
-          });
+          return callMethod(
+            sys,
+            plants.get(targetService)!,
+            {
+              sessionId: growParams.sessionId,
+              requestId: growParams.requestId,
+              ctx: growParams.ctx,
+              caller: plantName,
+              receiver: targetService,
+              method: prop as any,
+              args,
+              callId,
+            } satisfies Call,
+          );
         }
 
         const procName = sys.field.plants[targetService]?.proc ?? targetService;
@@ -770,28 +798,33 @@ function buildProxy(
 
           port.postMessage({
             call: {
-              method: prop,
+              method: prop as string,
               args,
               caller: plantName,
               receiver: targetService,
               callId,
               sessionId: growParams.sessionId,
               requestId: growParams.requestId,
-            } as Call,
+              ctx: growParams.ctx,
+            } satisfies Call,
           });
 
           return deferred.promise;
         }
 
-        return callOverHttp(sys, {
-          method: prop as string,
-          sessionId: growParams.sessionId,
-          requestId: growParams.requestId,
-          caller: plantName,
-          receiver: targetService,
-          args,
-          callId,
-        });
+        return callOverHttp(
+          sys,
+          {
+            method: prop as string,
+            sessionId: growParams.sessionId,
+            requestId: growParams.requestId,
+            ctx: growParams.ctx,
+            caller: plantName,
+            receiver: targetService,
+            args,
+            callId,
+          } satisfies Call,
+        );
       };
     },
   });
@@ -801,6 +834,7 @@ async function callOverHttp(sys: Sys, call: {
   method: string;
   sessionId: string;
   requestId: string;
+  ctx: Ctx;
   caller: string;
   receiver: string;
   args: any[];

@@ -1,7 +1,9 @@
 import { _, existsSync, generateUUID, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import {
+  Call,
   CallMethod,
+  Ctx,
   Field,
   IWorkerCommunication,
   MsgFromWorker,
@@ -11,8 +13,8 @@ import {
   ValidField,
 } from "./types.ts";
 import { getLogger } from "./logger.ts";
-export { getLogger } from "./logger.ts";
 export type { Logger } from "./logger.ts";
+export type { Ctx } from "./types.ts";
 import * as channelRegistry from "./channel_registry.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 import { Queues } from "./queues.ts";
@@ -71,8 +73,6 @@ function isPortAvailable(port: number) {
 }
 
 function validateField(field: Field, servicesDir: string): ValidField {
-  field = Field.parse(field);
-
   const procs: string[] = [];
 
   Object.keys(field.plants).forEach((plantName) => {
@@ -118,6 +118,8 @@ function validateField(field: Field, servicesDir: string): ValidField {
   if (!field.communicationSecret) {
     field.communicationSecret = generateUUID();
   }
+
+  field.initCtx = field.initCtx ?? ((_c: any, ctx: any) => ctx);
 
   return field as ValidField;
 }
@@ -202,6 +204,13 @@ export async function grow(rawField: Field) {
           }
 
           return async (...args: any[]) => {
+            const requestId = generateUUID();
+            const ctx = field.initCtx(null, {
+              sessionId: sessionId ?? "",
+              requestId,
+              data: {},
+            });
+
             if (methodName === "$send") {
               do$send({
                 procs,
@@ -209,7 +218,8 @@ export async function grow(rawField: Field) {
                 plantName,
                 procName: findPlantProcName(procs, plantName) ?? "",
                 sessionId: sessionId ?? "",
-                requestId: generateUUID(),
+                requestId,
+                ctx,
                 args,
               });
               return;
@@ -218,6 +228,7 @@ export async function grow(rawField: Field) {
             const r = await callMethod({
               sessionId: sessionId ?? "",
               requestId: generateUUID(),
+              ctx,
               plantName,
               methodName,
               args,
@@ -235,6 +246,13 @@ export async function grow(rawField: Field) {
       }) as T;
     },
     queue(plantName: string, sessionId: string) {
+      const requestId = generateUUID();
+      const ctx = field.initCtx(null, {
+        sessionId: sessionId ?? "",
+        requestId,
+        data: {},
+      });
+
       return {
         $send(...args: any[]) {
           do$send({
@@ -243,7 +261,8 @@ export async function grow(rawField: Field) {
             plantName,
             procName: findPlantProcName(procs, plantName) ?? "",
             sessionId: sessionId ?? "",
-            requestId: generateUUID(),
+            requestId,
+            ctx,
             args,
           });
         },
@@ -271,7 +290,7 @@ function sendReInit(
   proc.worker.postMessage(
     {
       reinit: {
-        field: getTransferableField(field),
+        field: _.omit(getTransferableField(field), "initCtx"),
         proc: procName,
         portNames: Array.from(proc.procsPorts ?? { length: 0 })
           .map((
@@ -302,7 +321,7 @@ function sendInit(
   proc.worker.postMessage(
     {
       init: {
-        field: getTransferableField(field),
+        field: _.omit(getTransferableField(field), "initCtx"),
         proc: procName,
         portNames: Array.from(proc.procsPorts ?? { length: 0 })
           .map((
@@ -422,7 +441,7 @@ function ensureValidArgs(cfg: {
   return parsed;
 }
 
-const callMethod: CallMethod = (cfg) => {
+const callMethod: CallMethod = (cfg: any) => {
   cfg.args = ensureValidArgs(cfg);
 
   const callId = generateUUID();
@@ -438,9 +457,10 @@ const callMethod: CallMethod = (cfg) => {
       method: cfg.methodName,
       sessionId: cfg.sessionId,
       requestId: cfg.requestId,
+      ctx: cfg.ctx,
       args: cfg.args,
       callId,
-    },
+    } satisfies Call,
   });
 
   return deferred.promise as any;
@@ -467,6 +487,7 @@ function do$send(cfg: {
   plantName: string;
   sessionId: string;
   requestId: string;
+  ctx: Ctx;
   args: any[];
 }): void {
   cfg.queues.enqueue({
@@ -477,6 +498,7 @@ function do$send(cfg: {
     sendId: generateUUID(),
     sessionId: cfg.sessionId,
     requestId: cfg.requestId,
+    ctx: cfg.ctx,
   });
 }
 
@@ -503,7 +525,7 @@ function restart({
       proc.worker.terminate();
     }
 
-    const procsNames = _.uniq(
+    const procsNames: string[] = _.uniq(
       Object
         .entries(field.plants)
         .map(([, plantDef]) => plantDef.proc),
@@ -643,7 +665,7 @@ async function createProcs(
   field: ValidField,
   msgr: IWorkerCommunication,
 ): Promise<Map<string, Proc>> {
-  const procsNames = _.uniq(
+  const procsNames: string[] = _.uniq(
     Object
       .entries(field.plants)
       .map(([, plantDef]) => plantDef.proc),
@@ -667,6 +689,8 @@ async function createProcs(
   }
   return procs;
 }
+
+declare type MessagePort = any;
 
 async function createProc({
   procs,
@@ -708,6 +732,11 @@ async function createProc({
       })),
     procsPorts: channels.get(procName)!,
   });
+}
+
+declare class MessageChannel {
+  port1: any;
+  port2: any;
 }
 
 /**

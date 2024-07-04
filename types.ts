@@ -1,4 +1,4 @@
-import { Hono, z } from "./deps.ts";
+import { Context, Hono, z } from "./deps.ts";
 import * as channelRegistry from "./channel_registry.ts";
 
 export const PlantDef = z.object({
@@ -29,20 +29,31 @@ export const ValidProcDef = z.object({
 });
 export type ValidProcDef = z.infer<typeof ValidProcDef>;
 
-export const Field = z.object({
-  communicationSecret: z.string().optional(),
-  plants: z.record(PlantDef),
-  procs: z.record(ProcDef).optional(),
-  http: HttpFunction.optional(),
-});
-export type Field = z.infer<typeof Field>;
+export type Ctx<T = any> = {
+  sessionId?: string;
+  requestId: string;
+  data: T;
+};
+
+export type Field = {
+  communicationSecret: string;
+  plants: Record<string, PlantDef>;
+  procs?: Record<string, ProcDef>;
+  http?: HttpFunction;
+  initCtx?: (c: Context, ctx: Ctx) => Ctx;
+};
 
 export type ValidField = {
   communicationSecret: string;
   plants: Record<string, Required<PlantDef>>;
   procs: Record<string, ValidProcDef>;
   http?: HttpFunction;
+  initCtx: (c: Context | null, ctx: Ctx) => Ctx;
 };
+
+export type ClonedField = Omit<ValidField, "initCtx">;
+
+declare type MessagePort = any;
 
 export type Proc = {
   worker: channelRegistry.IMessagePort;
@@ -69,6 +80,7 @@ export type CallResult =
 export type Call = {
   sessionId: string;
   requestId: string;
+  ctx: Ctx;
   caller: string;
   receiver: string;
   method: string;
@@ -84,6 +96,7 @@ export type Send = {
   sendId: string;
   sessionId: string;
   requestId: string;
+  ctx: Ctx;
 };
 
 export type SendAck = {
@@ -140,6 +153,7 @@ type CallMethodCfg = {
   requestId: string;
   plantName: string;
   methodName: string;
+  ctx: Ctx;
   args: any[];
   procs: Map<string, Proc>;
 };

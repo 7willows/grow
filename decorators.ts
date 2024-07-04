@@ -13,6 +13,10 @@ export function cache(
   return Reflect.metadata("cache", { ms, cacheKey });
 }
 
+export function ctx() {
+  return Reflect.metadata("ctx", true);
+}
+
 export function config(cfgPath?: string) {
   return Reflect.metadata("config", cfgPath || "###DEDUCE");
 }
