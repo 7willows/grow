@@ -14,7 +14,7 @@ import {
 } from "./types.ts";
 import { getLogger } from "./logger.ts";
 export type { Logger } from "./logger.ts";
-export type { Ctx } from "./types.ts";
+export type { ConfigurableInject, Ctx, GrowConfig } from "./types.ts";
 import * as channelRegistry from "./channel_registry.ts";
 import { isHttpEnabled, startHttpServer } from "./http.ts";
 import { Queues } from "./queues.ts";

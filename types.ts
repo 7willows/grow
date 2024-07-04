@@ -35,6 +35,16 @@ export type Ctx<T = any> = {
   data: T;
 };
 
+export type GrowConfig<T = any> = {
+  sessionId?: string;
+  requestId?: string;
+  ctx?: Ctx<T>;
+};
+
+export type ConfigurableInject<T, U = any> = (
+  cfg: (x: GrowConfig<U>) => GrowConfig<U>,
+) => T;
+
 export type Field = {
   communicationSecret: string;
   plants: Record<string, PlantDef>;

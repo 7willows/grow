@@ -476,6 +476,7 @@ async function callMethod(
   plant: any,
   call: Call,
 ): Promise<any> {
+  console.log("AAAAAAA", call, new Error());
   const plantLogger = getLogger({
     name: `${call.receiver}.${call.method}()`,
     sessionId: call.sessionId,
@@ -551,6 +552,7 @@ function wrapPlant<T extends Record<string, unknown>>(
   const loggers = propsByMetadata("logger", plant);
   const requestIds = propsByMetadata("requestId", plant);
   const injected = propsByMetadata("inject", plant);
+  const configurableInjects = propsByMetadata("configurableIntject", plant);
   const queued = propsByMetadata("queue", plant);
   const ctxs = propsByMetadata("ctx", plant);
 
@@ -573,6 +575,18 @@ function wrapPlant<T extends Record<string, unknown>>(
   }
 
   for (const key of injected) {
+    const inj = Object.create((plant as any)[key]);
+
+    inj[IDENTITY]["###GROW"] = {
+      sessionId: cfg.sessionId,
+      requestId: cfg.requestId,
+      ctx: cfg.ctx,
+    };
+
+    wrapped[key] = inj;
+  }
+
+  for (const key of configurableInjects) {
     const inj = Object.create((plant as any)[key]);
 
     inj[IDENTITY]["###GROW"] = {
@@ -639,6 +653,23 @@ function initInjectables(
     toInject.push(meta);
 
     plant[key] = buildProxy(sys, plantName, meta);
+  }
+
+  for (const key of Object.keys(plant)) {
+    let meta = Reflect.getMetadata("configurableInject", plant, key);
+
+    if (!meta) {
+      continue;
+    }
+
+    if (meta === "###DEDUCE") {
+      meta = key[0].toUpperCase() + key.slice(1);
+    }
+
+    resolver.setDependency(plantName, meta);
+    toInject.push(meta);
+
+    plant[key] = buildConfigurableProxy(sys, plantName, meta);
   }
 
   return toInject;
@@ -740,6 +771,97 @@ function buildQueueWrapper(sys: Sys, plantName: string, targetService: string) {
   };
 
   return wrapper;
+}
+
+function buildConfigurableProxy(
+  sys: Sys,
+  plantName: string,
+  targetService: string,
+) {
+  return function (initGrowParams: (x: any) => any) {
+    return new Proxy({}, {
+      get: (target, prop) => {
+        if (prop === IDENTITY) {
+          return target;
+        }
+
+        return (...args: any[]) => {
+          const callId = generateUUID();
+          const growParams = initGrowParams((target as any)["###GROW"] ?? {});
+
+          if (prop === "$send") {
+            return sendToWorker(
+              sys,
+              {
+                sessionId: growParams.sessionId,
+                requestId: growParams.requestId,
+                ctx: growParams.ctx,
+                caller: plantName,
+                receiver: targetService,
+                args,
+                sendId: callId,
+              },
+            );
+          }
+
+          if (plants.has(targetService)) {
+            return callMethod(
+              sys,
+              plants.get(targetService)!,
+              {
+                sessionId: growParams.sessionId,
+                requestId: growParams.requestId,
+                ctx: growParams.ctx,
+                caller: plantName,
+                receiver: targetService,
+                method: prop as any,
+                args,
+                callId,
+              } satisfies Call,
+            );
+          }
+
+          const procName = sys.field.plants[targetService]?.proc ??
+            targetService;
+          const port = ports.get(procName);
+
+          if (port) {
+            const deferred = defer();
+            calls.set(callId, deferred);
+
+            port.postMessage({
+              call: {
+                method: prop as string,
+                args,
+                caller: plantName,
+                receiver: targetService,
+                callId,
+                sessionId: growParams.sessionId,
+                requestId: growParams.requestId,
+                ctx: growParams.ctx,
+              } satisfies Call,
+            });
+
+            return deferred.promise;
+          }
+
+          return callOverHttp(
+            sys,
+            {
+              method: prop as string,
+              sessionId: growParams.sessionId,
+              requestId: growParams.requestId,
+              ctx: growParams.ctx,
+              caller: plantName,
+              receiver: targetService,
+              args,
+              callId,
+            } satisfies Call,
+          );
+        };
+      },
+    });
+  };
 }
 
 function buildProxy(

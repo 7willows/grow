@@ -25,6 +25,10 @@ export function inject(serviceName?: string) {
   return Reflect.metadata("inject", serviceName || "###DEDUCE");
 }
 
+export function configurableInject(serviceName?: string) {
+  return Reflect.metadata("configurableInject", serviceName || "###DEDUCE");
+}
+
 export function sessionId() {
   return Reflect.metadata("sessionId", true);
 }
