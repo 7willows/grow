@@ -320,9 +320,6 @@ function setupMsgHandlers() {
 function assignLoggers() {
   plants.forEach((plant, plantName) => {
     const loggers = propsByMetadata("logger", plant);
-    if (plantName === "FlowAccess") {
-      console.log("loggers", loggers);
-    }
 
     for (const key of loggers) {
       plant[key] = getLogger({
@@ -476,7 +473,6 @@ async function callMethod(
   plant: any,
   call: Call,
 ): Promise<any> {
-  console.log("AAAAAAA", call, new Error());
   const plantLogger = getLogger({
     name: `${call.receiver}.${call.method}()`,
     sessionId: call.sessionId,
