@@ -1,3 +1,10 @@
+/// <reference no-default-lib="true" />
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+/// <reference lib="dom.asynciterable" />
+/// <reference lib="deno.ns" />
+/// <reference lib="deno.unstable" />
+
 import { _, existsSync, generateUUID, log, match, P, path, z } from "./deps.ts";
 import { defer, Deferred } from "./defer.ts";
 import {

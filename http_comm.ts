@@ -1,13 +1,13 @@
 import { Context, Hono, log } from "./deps.ts";
 import { getLogger, Logger } from "./logger.ts";
 import {
+  ClonedField,
   ISubscription,
   IWorkerCommunication,
   MsgFromExternalWorker,
-  ValidField,
 } from "./types.ts";
 
-export function hasExternalProcs(field: ValidField): boolean {
+export function hasExternalProcs(field: ClonedField): boolean {
   return Object.keys(field.procs).some((procName) => {
     return field.procs[procName].cmd !== undefined;
   });
@@ -22,7 +22,7 @@ export class HttpComm implements IWorkerCommunication {
   private abort: AbortController = new AbortController();
   private server!: Deno.Server;
 
-  constructor(private field: ValidField, port: number) {
+  constructor(private field: ClonedField, port: number) {
     if (!hasExternalProcs(field)) {
       return new HttpCommPassThrough() as any;
     }

@@ -46,7 +46,7 @@ export type ConfigurableInject<T, U = any> = (
 ) => T;
 
 export type Field = {
-  communicationSecret: string;
+  communicationSecret?: string;
   plants: Record<string, PlantDef>;
   procs?: Record<string, ProcDef>;
   http?: HttpFunction;

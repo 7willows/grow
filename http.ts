@@ -1,4 +1,4 @@
-import { Context, Hono, match, P, StatusCode } from "./deps.ts";
+import { Context, Hono, match, P } from "./deps.ts";
 import { CallMethod, Field, Proc } from "./types.ts";
 
 export function isHttpEnabled(field: Field) {
@@ -18,7 +18,7 @@ export function startHttpServer(
 
   serveClient(app);
 
-  app.onError((err, c) => {
+  app.onError((err: any, c: Context) => {
     return c.json(err, errorToStatus(err));
   });
 
@@ -189,8 +189,8 @@ function handleRequest(cfg: {
   };
 }
 
-function errorToStatus(err: { message: string; name: string }) {
-  return match<[string, string], StatusCode>([err.message, err.name])
+function errorToStatus(err: { message: string; name: string }): any {
+  return match<[string, string], any>([err.message, err.name])
     .with(["notFound", P._], () => 404)
     .with(["unauthorized", P._], () => 401)
     .with(["forbidden", P._], () => 403)
