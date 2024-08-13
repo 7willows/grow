@@ -4,11 +4,15 @@
     "specifiers": {
       "jsr:@hono/hono": "jsr:@hono/hono@4.5.1",
       "jsr:@hono/hono@4.5.1": "jsr:@hono/hono@4.5.1",
+      "jsr:@hono/hono@4.5.5": "jsr:@hono/hono@4.5.5",
       "npm:dependency-resolver@2.0.1": "npm:dependency-resolver@2.0.1"
     },
     "jsr": {
       "@hono/hono@4.5.1": {
         "integrity": "459748ed4d4146c6e4bdff0213ff1ac44749904066ae02e7550d6c7f28c9bc4c"
+      },
+      "@hono/hono@4.5.5": {
+        "integrity": "e5a63b5f535475cd80974b65fed23a138d0cbb91fe1cc9a17a7c7278e835c308"
       }
     },
     "npm": {
