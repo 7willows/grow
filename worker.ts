@@ -530,8 +530,10 @@ async function callMethod(
 
   try {
     plantLogger.debug("started");
+    const timestamp = performance.now();
     const result = await callFn();
-    plantLogger.debug("success");
+    const timestampConsumed = performance.now() - timestamp;
+    plantLogger.debug("success (" + String(timestampConsumed) + " ms.)");
     return result;
   } catch (err) {
     plantLogger.error("call", { service: call.receiver, method: call.method });
