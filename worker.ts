@@ -209,6 +209,13 @@ async function init(cfg: {
     const plant = await initPlant(plantName, plantDef.filePath);
     plants.set(plantName, plant);
 
+<<<<<<< Updated upstream
+=======
+    updateConfig(cfg.config);
+    assignLoggers();
+    retrieveCallers();
+
+>>>>>>> Stashed changes
     cfg.portNames.forEach((plantName, i) => {
       listenOnPort(sys, cfg.procPorts[i]);
       ports.set(plantName, cfg.procPorts[i]);
@@ -331,7 +338,21 @@ function assignLoggers() {
   });
 }
 
+<<<<<<< Updated upstream
 function listenOnPort(sys: Sys, port: MessagePort) {
+=======
+function retrieveCallers() {
+  plants.forEach((plant, plantName) => {
+    const callers = propsByMetadata("caller", plant);
+
+    for (const key of callers) {
+      console.log("---KOLER", key);
+    }
+  });
+}
+
+function listenOnPort(port: MessagePort) {
+>>>>>>> Stashed changes
   port.onmessage = (event: MessageEvent) => {
     match(event.data as WorkerToWorkerMsg)
       .with({ call: P.select() }, (call: Call) => {
@@ -530,7 +551,12 @@ async function callMethod(
 
   try {
     plantLogger.debug("started");
+<<<<<<< Updated upstream
     const result = await callFn();
+=======
+    // const meta = Reflect.getMetadata("caller", plant, call.method);
+    const result = await wrappedPlant[call.method](...call.args);
+>>>>>>> Stashed changes
     plantLogger.debug("success");
     return result;
   } catch (err) {
@@ -548,9 +574,13 @@ function wrapPlant<T extends Record<string, unknown>>(
   const loggers = propsByMetadata("logger", plant);
   const requestIds = propsByMetadata("requestId", plant);
   const injected = propsByMetadata("inject", plant);
+<<<<<<< Updated upstream
   const configurableInjects = propsByMetadata("configurableIntject", plant);
   const queued = propsByMetadata("queue", plant);
   const ctxs = propsByMetadata("ctx", plant);
+=======
+  const callers = propsByMetadata("caller", plant);
+>>>>>>> Stashed changes
 
   const wrapped = Object.create(plant);
 

@@ -1,4 +1,4 @@
-import { inject } from "../../mod.ts";
+import { inject,caller } from "../../mod.ts";
 import { z } from "../../deps.ts";
 import * as nameService from "./name.ts";
 
@@ -18,4 +18,7 @@ export class Hello implements IHello {
 
     return `Hello ${name}!`;
   }
+
+  @caller()
+  public nameCaller() {}
 }

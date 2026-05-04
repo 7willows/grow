@@ -33,7 +33,15 @@ export function sessionId() {
   return Reflect.metadata("sessionId", true);
 }
 
+<<<<<<< Updated upstream
 export function requestId() {
+=======
+export function caller(): PropertyDecorator {
+  return Reflect.metadata("caller", true);
+}
+
+export function requestId(): PropertyDecorator {
+>>>>>>> Stashed changes
   return Reflect.metadata("requestId", true);
 }
 
