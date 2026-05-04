@@ -473,16 +473,19 @@ async function callMethod(
   plant: any,
   call: Call,
 ): Promise<any> {
+  const sessionId = call.sessionId || call.ctx?.sessionId || "";
+  const requestId = call.requestId || call.ctx?.requestId || "";
+
   const plantLogger = getLogger({
     name: `${call.receiver}.${call.method}()`,
-    sessionId: call.sessionId,
-    requestId: call.requestId,
+    sessionId,
+    requestId,
   });
 
   const wrappedPlant = wrapPlant(plant, {
-    sessionId: call.sessionId,
+    sessionId,
     logger: plantLogger,
-    requestId: call.requestId,
+    requestId,
     ctx: call.ctx,
   });
 
@@ -501,8 +504,8 @@ async function callMethod(
 
   if (cacheMeta) {
     const cacheKey = cacheMeta.cacheKey({
-      sessionId: call.sessionId,
-      requestId: call.requestId,
+      sessionId,
+      requestId,
       args: call.args,
     });
 
