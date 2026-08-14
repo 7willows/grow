@@ -573,11 +573,13 @@ function wrapPlant<T extends Record<string, unknown>>(
   for (const key of injected) {
     const inj = Object.create((plant as any)[key]);
 
-    inj[IDENTITY]["###GROW"] = {
-      sessionId: cfg.sessionId,
-      requestId: cfg.requestId,
-      ctx: cfg.ctx,
-    };
+    Object.defineProperty(inj, "###GROW", {
+      value: {
+        sessionId: cfg.sessionId,
+        requestId: cfg.requestId,
+        ctx: cfg.ctx,
+      },
+    });
 
     wrapped[key] = inj;
   }
@@ -585,11 +587,13 @@ function wrapPlant<T extends Record<string, unknown>>(
   for (const key of configurableInjects) {
     const inj = Object.create((plant as any)[key]);
 
-    inj[IDENTITY]["###GROW"] = {
-      sessionId: cfg.sessionId,
-      requestId: cfg.requestId,
-      ctx: cfg.ctx,
-    };
+    Object.defineProperty(inj, "###GROW", {
+      value: {
+        sessionId: cfg.sessionId,
+        requestId: cfg.requestId,
+        ctx: cfg.ctx,
+      },
+    });
 
     wrapped[key] = inj;
   }
@@ -597,11 +601,13 @@ function wrapPlant<T extends Record<string, unknown>>(
   for (const key of queued) {
     const q = Object.create((plant as any)[key]);
 
-    q[IDENTITY]["###GROW"] = {
-      sessionId: cfg.sessionId,
-      requestId: cfg.requestId,
-      ctx: cfg.ctx,
-    };
+    Object.defineProperty(q, "###GROW", {
+      value: {
+        sessionId: cfg.sessionId,
+        requestId: cfg.requestId,
+        ctx: cfg.ctx,
+      },
+    });
 
     wrapped[key] = q;
   }
@@ -750,8 +756,10 @@ function buildQueueWrapper(sys: Sys, plantName: string, targetService: string) {
     get [IDENTITY]() {
       return wrapper;
     },
-    $send(...args: any[]): void {
-      const growParams = (wrapper as any)["###GROW"] ?? {};
+    $send(this: any, ...args: any[]): void {
+      const growParams =
+        Object.getOwnPropertyDescriptor(this ?? {}, "###GROW")?.value ??
+          (wrapper as any)["###GROW"] ?? {};
 
       sendToWorker(sys, {
         sessionId: growParams.sessionId,
@@ -776,14 +784,17 @@ function buildConfigurableProxy(
 ) {
   return function (initGrowParams: (x: any) => any) {
     return new Proxy({}, {
-      get: (target, prop) => {
+      get: (target, prop, receiver) => {
         if (prop === IDENTITY) {
           return target;
         }
 
         return (...args: any[]) => {
           const callId = generateUUID();
-          const growParams = initGrowParams((target as any)["###GROW"] ?? {});
+          const growParams = initGrowParams(
+            Object.getOwnPropertyDescriptor(receiver ?? {}, "###GROW")?.value ??
+              (target as any)["###GROW"] ?? {},
+          );
 
           if (prop === "$send") {
             return sendToWorker(
@@ -866,14 +877,16 @@ function buildProxy(
   targetService: string,
 ) {
   return new Proxy({}, {
-    get: (target, prop) => {
+    get: (target, prop, receiver) => {
       if (prop === IDENTITY) {
         return target;
       }
 
       return (...args: any[]) => {
         const callId = generateUUID();
-        const growParams = (target as any)["###GROW"] ?? {};
+        const growParams =
+          Object.getOwnPropertyDescriptor(receiver ?? {}, "###GROW")?.value ??
+            (target as any)["###GROW"] ?? {};
 
         if (prop === "$send") {
           return sendToWorker(
