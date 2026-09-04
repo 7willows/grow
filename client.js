@@ -10,11 +10,14 @@ class ZodError extends Error {
   const listeners = {};
 
   window.grow = {
-    plant(plantName) {
+    // options.keepalive: the request outlives the page (fire-and-forget from
+    // `pagehide`/unload, e.g. releasing a server-side lock). Browsers cap such
+    // bodies at 64 KB and drop the response once the page is gone.
+    plant(plantName, options = {}) {
       return new Proxy({}, {
         get(_target, prop) {
           return function (...args) {
-            return callPlant(plantName, prop, args);
+            return callPlant(plantName, prop, args, options);
           };
         },
       });
@@ -53,7 +56,7 @@ class ZodError extends Error {
     },
   };
 
-  async function callPlant(plantName, methodName, args) {
+  async function callPlant(plantName, methodName, args, options = {}) {
     const requestId = getRandomString();
     const plantNameDash = toDashCase(plantName);
     const methodNameDash = toDashCase(methodName);
@@ -71,6 +74,7 @@ class ZodError extends Error {
         "grow-session-id": window.grow.sessionId || "",
       },
       body: JSON.stringify(args),
+      keepalive: Boolean(options.keepalive),
     });
 
     const text = await res.text();

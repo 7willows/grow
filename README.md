@@ -6,6 +6,17 @@
 - `GROW_LOG_PRETTY` - if "true" then logs will be pretty
 - `GROW_PORT` - port for http
 
+## Browser client (`/grow.js`)
+
+`grow.plant(name)` returns a proxy whose methods POST to `/<plant>/<method>`.
+`grow.plant(name, options)` accepts:
+
+- `keepalive` - send the calls with `fetch`'s `keepalive` flag, so a request
+  started from `pagehide`/`unload` survives the page (e.g. releasing a
+  server-side lock when the tab is closed). Browsers cap such bodies at 64 KB
+  and the response is not delivered once the page is gone, so use it only for
+  fire-and-forget calls.
+
 ## TODO
 
 - add timeout to calls
