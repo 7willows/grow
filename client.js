@@ -7,6 +7,8 @@ class ZodError extends Error {
 }
 
 (function () {
+  // Purge a legacy browser session without dispatching logout on page load.
+  localStorage.removeItem("sessionId");
   const listeners = {};
 
   window.grow = {
@@ -71,7 +73,7 @@ class ZodError extends Error {
       headers: {
         "content-type": "application/json",
         "grow-request-id": requestId,
-        "grow-session-id": window.grow.sessionId || "",
+        "grow-csrf-token": document.querySelector('meta[name="grow-csrf-token"]')?.content || "",
       },
       body: JSON.stringify(args),
       keepalive: Boolean(options.keepalive),

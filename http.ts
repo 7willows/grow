@@ -69,6 +69,7 @@ function serveClient(app: Hono) {
 
   app.get("/grow.js", (c) => {
     c.header("content-type", "text/javascript");
+    c.header("cache-control", "no-cache");
     return c.body(client);
   });
 }
@@ -156,22 +157,24 @@ function handleRequest(cfg: {
 
     let result;
 
-    const sessionId = c.req.header("grow-session-id") ?? "";
     const requestId = c.req.header("grow-request-id") ?? "";
-    const ctx = {
-      sessionId,
-      requestId,
-      data: {},
-    };
     try {
+      // initCtx may replace sessionId (e.g. read it from an HttpOnly cookie);
+      // whatever it returns is the session the plant sees.
+      const initial = {
+        sessionId: c.req.header("grow-session-id") ?? "",
+        requestId,
+        data: {},
+      };
+      const ctx = cfg.field.initCtx?.(c, initial as any) ?? initial as any;
       result = await cfg.callMethod({
         plantName: cfg.plantName,
         methodName: cfg.methodName,
         args,
         procs: cfg.procs,
-        sessionId,
+        sessionId: ctx.sessionId ?? "",
         requestId,
-        ctx: cfg.field.initCtx?.(c, ctx as any) ?? ctx as any,
+        ctx,
       });
     } catch (err: any) {
       return c.json(err, errorToStatus(err));
